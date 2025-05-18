@@ -70,7 +70,7 @@ def make_yaml(flow_config, outputdir, correlated):
         fd_max  = list(map(float, fd_maxs))
 
         if len(fd_min) != len(ptmins) or len(fd_max) != len(ptmins) or len(bkg_max) != len(ptmins):
-            raise ValueError(f"Length of fd_min or fd_max or bkg_max does not match length of ptmins: {len(fd_min)} != {len(ptmins)}")
+            raise ValueError(f"Lengths do not match: bkg_max: {len(bkg_max)}, fd_max: {len(fd_max)}, fd_min: {len(fd_min)}, ptmins: {len(ptmins)}")
 
         combinations = {
             'icutset': iCut,
