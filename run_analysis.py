@@ -19,7 +19,7 @@ def check_dir(dir):
 		print(f"\033[32m{dir} does not exist, it will be created\033[0m")
 		os.makedirs(dir)
 	else:
-		print(f"\033[33m{dir} already exists, it will be removed and recreated\033[0m")
+		print(f"\033[33m{dir} already exists, it will be overwritten\033[0m")
 		shutil.rmtree(dir)
 		os.makedirs(dir)
 
@@ -53,8 +53,8 @@ def run_combined_cut_variation(config, operations, nworkers, out_dir):
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description='Arguments')
 	parser.add_argument('flow_config', metavar='text', default='config_flow_d0.yml', help='configuration file')
-	parser.add_argument("--correlated", "-corr", action="store_true", help="perform correlated v2 estimation")
-	parser.add_argument("--combined", "-comb", action="store_true", help="perform combined v2 estimation")
+	parser.add_argument("--correlated", "-corr", action="store_true", help="perform correlated analysis")
+	parser.add_argument("--combined", "-comb", action="store_true", help="perform combined analysis")
 	args = parser.parse_args()
 
 	start_time = time.time()

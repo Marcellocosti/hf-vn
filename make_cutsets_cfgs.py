@@ -1,7 +1,8 @@
 '''
-Script to create a yaml file with a set of cuts for ML
-python3 make_yaml_for_ml.py config_flow.yml -o path/to/output -s text
-
+Script to create yaml files corresponding to a set of cutset to perform
+the cut variation analysis in the combined and correlated cases
+python3 make_cutsets_cfgs.py config_flow.yml -o path/to/output [--correlated]
+Without --correlated, the script will create yaml files for the combined case
 '''
 import yaml
 import argparse
@@ -62,7 +63,7 @@ def make_yaml(flow_config, outputdir, correlated):
         bkg_cuts_upper = [pad_to_length(cuts, maxCutSets) for cuts in cfg_cutvar['uncorr_bdt_cut']['bkg_max']]
         bkg_cuts_upper  = list(map(list, zip(*bkg_cuts_upper)))
 
-    os.makedirs(f'{outputdir}/config', exist_ok=True)
+    os.makedirs(f'{outputdir}/cutsets', exist_ok=True)
     for iCut, (bkg_maxs, fd_mins, fd_maxs) in enumerate(zip(bkg_cuts_upper, sig_cuts_lower, sig_cuts_upper)):
         bkg_max = list(map(float, bkg_maxs))
         fd_min  = list(map(float, fd_mins))
@@ -73,8 +74,8 @@ def make_yaml(flow_config, outputdir, correlated):
 
         combinations = {
             'icutset': iCut,
+            'Pt': {'min': ptmins, 'max': ptmaxs},
             'cutvars': {
-                'Pt': {'min': ptmins, 'max': ptmaxs},
                 'score_bkg': {'min': [0.0] * len(ptmins), 'max': bkg_max},
                 'score_FD': {'min': fd_min, 'max': fd_max},
             },
@@ -82,10 +83,10 @@ def make_yaml(flow_config, outputdir, correlated):
             'fitrangemax': cfg['MassMax'],
         }
 
-        with open(f'{outputdir}/config/cutset_{iCut:02}.yml', 'w') as file:
+        with open(f'{outputdir}/cutsets/cutset_{iCut:02}.yml', 'w') as file:
             yaml.dump(combinations, file, default_flow_style=False)
 
-    print(f'Yaml files are saved in {outputdir}/config')
+    print(f'Cutsets saved in {outputdir}/cutsets')
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Arguments')
