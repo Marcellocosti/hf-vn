@@ -241,6 +241,7 @@ VnVsMassFitter::VnVsMassFitter(std::string name, TH1F* hMass, TH1F* hvn, Double_
     fMassHisto->SetDirectory(0);
     fVnVsMassHisto = (TH1F*)hvn->Clone(Form("fHistoV%dVsMass_%s",fHarmonic, fName.c_str()));
     fVnVsMassHisto->SetDirectory(0);
+    fMassFitter = new InvMassFitter(fMassHisto,fMassMin,fMassMax,fMassBkgFuncType,fMassSgnFuncType);
 
     DefineNumberOfParameters();
     SetParInitValsAndNames();
@@ -616,6 +617,29 @@ Int_t VnVsMassFitter::SimultaneousFit() {
   if (!fSuppressOutput) {
     std::cout << "\n--- [" << fName << "] Parameter limits and fixing for signal shape applied ---" << std::endl;
   }
+  
+  // When sgn func is Double CrystalBall, the sgnInt, alpha and N parameters are fixed 
+  // to the ones obtained from the mass prefit (alpha and N fixed to the MC from the config)
+  if (fMassSgnFuncType==kDoubleCBSymm) {
+    // fitter.Config().ParSettings(fNParsMassBkg).Fix();
+    // fitter.Config().ParSettings(fNParsMassBkg+2).Fix();   // alpha
+    // fitter.Config().ParSettings(fNParsMassBkg+3).Fix();   // alpha
+    // fitter.Config().ParSettings(fNParsMassBkg+4).Fix();   // N
+  }
+  if (fMassSgnFuncType==kDoubleCBAsymm) {
+    // fitter.Config().ParSettings(fNParsMassBkg).Fix();
+    fitter.Config().ParSettings(fNParsMassBkg+2).SetLimits(initpars[fNParsMassBkg+2] - (initpars[fNParsMassBkg+2] / 5), initpars[fNParsMassBkg+2] + (initpars[fNParsMassBkg+2] / 5));   // alpha
+    fitter.Config().ParSettings(fNParsMassBkg+3).SetLimits(initpars[fNParsMassBkg+3] - (initpars[fNParsMassBkg+3] / 5), initpars[fNParsMassBkg+3] + (initpars[fNParsMassBkg+3] / 5));   // alpha
+    fitter.Config().ParSettings(fNParsMassBkg+4).SetLimits(initpars[fNParsMassBkg+4] - (initpars[fNParsMassBkg+4] / 5), initpars[fNParsMassBkg+4] + (initpars[fNParsMassBkg+4] / 5));   // N
+    fitter.Config().ParSettings(fNParsMassBkg+5).SetLimits(initpars[fNParsMassBkg+5] - (initpars[fNParsMassBkg+5] / 5), initpars[fNParsMassBkg+5] + (initpars[fNParsMassBkg+5] / 5));   // N
+    fitter.Config().ParSettings(fNParsMassBkg+6).SetLimits(initpars[fNParsMassBkg+6] - (initpars[fNParsMassBkg+6] / 5), initpars[fNParsMassBkg+6] + (initpars[fNParsMassBkg+6] / 5));   // N
+
+    // fitter.Config().ParSettings(fNParsMassBkg+2).Fix();   // alpha
+    // fitter.Config().ParSettings(fNParsMassBkg+3).Fix();   // alpha
+    // fitter.Config().ParSettings(fNParsMassBkg+4).Fix();   // N
+    // fitter.Config().ParSettings(fNParsMassBkg+5).Fix();   // N
+    // fitter.Config().ParSettings(fNParsMassBkg+6).Fix();   // N
+  }
 
   fitter.Config().MinimizerOptions().SetPrintLevel(0);
   fitter.Config().SetMinimizer("Minuit2","Migrad");
@@ -875,6 +899,7 @@ Double_t VnVsMassFitter::MassTemplates(Double_t *m,Double_t *pars){
       std::cerr << "Error: Invalid fAnchorTemplsMode value!" << std::endl;
       break;
   }
+  // totalTemplates += pars[0]*fHistoTemplates[0]->getVal(RooArgSet(this->fMassVar));
   return totalTemplates;
 }
 

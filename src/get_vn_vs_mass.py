@@ -325,11 +325,12 @@ def get_vn_vs_mass(fitConfigFileName, cutsetFileName, inFileName, batch, isMulti
     hTempls = {}
 
     # Create canvases
-    cSimFit = []
+    cSimFit, cInvMassPrefits = [], []
     for i in range(nPtBins):
         ptLow = ptmins[i]
         ptHigh = ptmaxs[i]
         cSimFit.append(TCanvas(f'cSimFit_pt{ptLow}_{ptHigh}', f'cSimFit_pt{ptLow}_{ptHigh}', 400, 900))
+        cInvMassPrefits.append(TCanvas(f'cMassPrefit_Pt{ptLow}_{ptHigh}', f'cMassPrefit_Pt{ptLow}_{ptHigh}', 400, 900))
         cSimFit[-1].Divide(1, 2)
     latex = TLatex()
     latex.SetNDC()

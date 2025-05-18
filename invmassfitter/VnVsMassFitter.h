@@ -188,6 +188,7 @@ public:
   Int_t GetSBVnPrefitNDF() const {return fSBVnPrefitNDF;}
   Double_t GetSBVnPrefitReducedChiSquare() const {return fSBVnPrefitChiSquare/fSBVnPrefitNDF;}
   Double_t GetSBVnPrefitProbability() const {return fSBVnPrefitProb;}
+  InvMassFitter* GetMassPrefitObject() const {return fMassFitter;}
   Double_t GetMassPrefitChiSquare() const {return fMassPrefitChiSquare;}
   Int_t GetMassPrefitNDF() const {return fMassPrefitNDF;}
   Double_t GetMassPrefitReducedChiSquare() const {return fMassPrefitChiSquare/fMassPrefitNDF;}

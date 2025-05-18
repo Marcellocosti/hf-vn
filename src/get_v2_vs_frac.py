@@ -1,11 +1,9 @@
-"""
-python script for the computation of the prompt or non-prompt v2 via extrapolation
-run: python ComputeV2vsFDFrac.py config.yaml --inputdir path/to/input --outputdir path/to/output --suffix text
+'''
+Script for fitting D+, D0 and Ds+ invariant-mass spectra
+run: python get_vn_vs_mass.py fitConfigFileName.yml centClass inputFileName.root outFileName.root
+            [--refFileName][--isMC][--batch]
+'''
 
-"""
-import argparse
-import os
-import yaml
 import sys
 import numpy as np
 import ROOT
@@ -17,7 +15,8 @@ from utils import get_particle_info, logger
 from load_utils import load_root_files
 from StyleFormatter import SetObjectStyle, GetROOTColor
 
-TH1.AddDirectory(False)
+def get_vn_vs_mass(fitConfigFileName, centClass, inFileName,
+                   outputdir, suffix, vn_method, batch):
 
 def set_frame_style(canv, Title, particleTit):
     canv.SetLeftMargin(0.15)
@@ -36,11 +35,8 @@ def set_frame_style(canv, Title, particleTit):
     hFrame.GetXaxis().SetTitleOffset(1.2)
     hFrame.GetYaxis().SetNdivisions(505)
 
-def set_frame_margin(canv):
-    canv.SetLeftMargin(0.15)
-    canv.SetRightMargin(0.05)
-    canv.SetBottomMargin(0.15)
-    canv.SetTopMargin(0.05)
+    with open(fitConfigFileName, 'r', encoding='utf8') as ymlfitConfigFile:
+        fitConfig = yaml.load(ymlfitConfigFile, yaml.FullLoader)
 
 def v2_vs_frac(config, ptMins, ptMaxs, CutSets, rawYieldFiles, fracFiles, multitrial, outputDir):
 
