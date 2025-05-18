@@ -35,7 +35,7 @@ def proj_multitrial(config, multitrial_folder):
     default_histos = {}
     for default_cutset in default_cutsets:
         suffix = os.path.basename(default_cutset).replace(".yml", "").replace("cutset_", "")
-        default_proj = TFile.Open(default_cutset.replace(".yml", ".root").replace("cutsets", "proj").replace("cutset", "proj"), "READ")
+        default_proj = TFile.Open(default_cutset.replace(".yml", ".root").replace("cutset", "proj"), "READ")
         default_histos[suffix] = {}
         default_histos[suffix]['Mass'] = default_proj.Get(f"{pt_bin_label}/hMassData")
         default_histos[suffix]['MassSp'] = default_proj.Get(f"{pt_bin_label}/hMassSpData")
@@ -53,9 +53,9 @@ def proj_multitrial(config, multitrial_folder):
         multitrial_cutsets = glob.glob(f"{multitrial_dir}/cutsets/*.yml")
         for multitrial_cutset in multitrial_cutsets:
             suffix = os.path.basename(multitrial_cutset).replace(".yml", "").replace("cutset_", "")
-            output_dir = os.path.dirname(multitrial_cutset).replace('cutsets', 'proj')
+            output_dir = os.path.dirname(multitrial_cutset).replace('cutset', 'proj')
             os.makedirs(output_dir, exist_ok=True)
-            output_path = multitrial_cutset.replace('.yml', '.root').replace('cutsets', 'proj').replace('cutset', 'proj')
+            output_path = multitrial_cutset.replace('.yml', '.root').replace('cutset', 'proj')
             output_file = TFile.Open(output_path, "RECREATE")
             output_file.mkdir(pt_bin_label)
             output_file.cd(pt_bin_label)

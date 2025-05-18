@@ -118,17 +118,17 @@ def process_pt_bin_mc(config, ptmin, ptmax, centmin, centmax, bkg_max_cut, debug
 
     outFile, write_opt = check_existing_outputs(ptmin, ptmax, outputDir, "MC")
 
-    axes_reco, rebin_reco, axes_gen, rebin_gen = [], [], [], []
-    axes_reco = config['preprocess']["axes_reco"]['axis_names']
-    rebin_reco = config['preprocess']["axes_reco"]['rebin_factors']
-    axes_gen = config['preprocess']["axes_gen"]['axis_names']
-    rebin_gen = config['preprocess']["axes_gen"]['rebin_factors']
+    axes_reco = list(config['preprocess']["axes_reco"].keys())
+    rebin_reco = list(config['preprocess']["axes_reco"].values())
+    axes_gen = list(config['preprocess']["axes_gen"].keys())
+    rebin_gen = list(config['preprocess']["axes_gen"].values())
 
     # cut on pt and bkg on all the reco and gen sparses
     make_dir_root_file('MC/Reco/', outFile)
     for key, sparse_type in reco_sparses.items():
-        [sparse.GetAxis(sparse_axes[key]['Pt']).SetRangeUser(ptmin, ptmax) for sparse in sparse_type] 
-        [sparse.GetAxis(sparse_axes[key]['ScoreBkg']).SetRangeUser(0, bkg_max_cut) for sparse in sparse_type]
+        for sparse in sparse_type:
+            sparse.GetAxis(sparse_axes[key]['Pt']).SetRangeUser(ptmin, ptmax)
+            sparse.GetAxis(sparse_axes[key]['score_bkg']).SetRangeUser(0, bkg_max_cut)
     for key, sparse_type in reco_sparses.items():
         for iSparse, sparse in enumerate(sparse_type):
             cloned_sparse = sparse.Clone()
@@ -142,7 +142,10 @@ def process_pt_bin_mc(config, ptmin, ptmax, centmin, centmax, bkg_max_cut, debug
                 make_dir_root_file(f'pt_{int(ptmin*10)}_{int(ptmax*10)}/MC/Reco/{key}', debugPreprocessFile)
                 debugPreprocessFile.cd(f'pt_{int(ptmin*10)}_{int(ptmax*10)}/MC/Reco/{key}')
                 for iDim in range(processed_sparse.GetNdimensions()):
-                    processed_sparse.Projection(iDim).Write(axes_reco[iDim], TObject.kOverwrite)
+                    try:
+                        processed_sparse.Projection(iDim).Write(axes_reco[iDim], TObject.kOverwrite)
+                    except Exception as e:
+                        print(f"⚠️ Exception at iDim={iDim}: {e}", flush=True)
             else:
                 processed_sparse.Add(proj_sparse)
         outFile.cd('MC/Reco/')

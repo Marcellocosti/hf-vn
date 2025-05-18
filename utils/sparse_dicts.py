@@ -5,7 +5,7 @@ from ROOT import TFile # pyright: ignore # type: ignore
 sys.path.append("./")
 from utils import logger
 
-def get_sparses_dicts(config):
+def get_sparses_dicts(config, beforeDMesonPR = False):
     
     axes_dict = {}
     ### Data sparse dictionary
@@ -136,7 +136,7 @@ def get_pt_preprocessed_sparses(config, iPt):
     logger("Loading preprocessed sparses", level='INFO')
     sparsesFlow, sparsesReco, sparsesGen, axes_dict, resolutions = {}, {}, {}, {}, {}
     pre_cfg = config['preprocess']
-    axes_dict['Flow'] = {ax: iax for iax, ax in enumerate(pre_cfg['axes_data']['axis_names'])}
+    axes_dict['Flow'] = {ax: iax for iax, ax in enumerate(pre_cfg['axes_data'].keys())}
     ptmin = config["ptbins"][iPt]
     ptmax = config["ptbins"][iPt+1]
 
@@ -155,19 +155,19 @@ def get_pt_preprocessed_sparses(config, iPt):
         for key in subdir.GetListOfKeys():
             obj = key.ReadObj()
             sparsesReco[key.GetName()[1:]] = obj
-            axes_dict[key.GetName()[1:]] = {ax: iax for iax, ax in enumerate(pre_cfg['axes_reco']['axis_names'])}
+            axes_dict[key.GetName()[1:]] = {ax: iax for iax, ax in enumerate(pre_cfg['axes_reco'].keys())}
 
         subdir = infileprep.Get("MC/Gen")
         for key in subdir.GetListOfKeys():
             obj = key.ReadObj()
             sparsesGen[key.GetName()[1:]] = obj
-            axes_dict[key.GetName()[1:]] = {ax: iax for iax, ax in enumerate(pre_cfg['axes_gen']['axis_names'])}
+            axes_dict[key.GetName()[1:]] = {ax: iax for iax, ax in enumerate(pre_cfg['axes_gen'].keys())}
 
     infileprep.Close()
 
     return sparsesFlow, sparsesReco, sparsesGen, axes_dict, resolutions
 
-def get_sparses(config, get_data=True, get_mc=True, debug=False):
+def get_sparses(config, get_data=True, get_mc=True, debug=False, MCBeforePRDplus=False):
     """Load the sparses and axes infos
 
     Args:
@@ -184,7 +184,8 @@ def get_sparses(config, get_data=True, get_mc=True, debug=False):
     """
 
     sparsesFlow, sparsesReco, sparsesGen, resolutions = {}, {}, {}, {}
-    axes_dict = get_sparses_dicts(config)
+    print(f"MCBeforePRDplus: {MCBeforePRDplus}")
+    axes_dict = get_sparses_dicts(config, MCBeforePRDplus)
     pre_cfg = config['preprocess'] if config.get('preprocess') else config
     if get_data:
         logger(f"\t\t[Data] Loading data sparses from: {pre_cfg['data']}")

@@ -199,6 +199,7 @@ def get_vnfitter_results(vnFitter, secPeak, useRefl, useTempl):
     vn_results['fBkgFuncMass'] = vnFitter.GetMassBkgFitFunc()
     vn_results['fBkgFuncVn'] = vnFitter.GetVnVsMassBkgFitFunc()
     vn_results['fSgnFuncMass'] = vnFitter.GetMassSignalFitFunc()
+    vn_results['pulls'] = vnFitter.GetPullDistribution()
     
     vn_results['fVnCompsFuncts'] = {}
     vnComps = vnFitter.GetVnCompsFuncts()
@@ -206,6 +207,7 @@ def get_vnfitter_results(vnFitter, secPeak, useRefl, useTempl):
     vn_results['fVnCompsFuncts']['vnBkg'] = vnComps[1]
     if secPeak:
         vn_results['fVnCompsFuncts']['vnSecPeak'] = vnComps[2]
+    vn_results['fMassTemplTotFunc'] = vnFitter.GetMassTemplFitFunc()
     vn_results['fMassTemplFuncts'] = vnFitter.GetMassTemplFuncts()
     if useTempl:
         for iTempl in range(len(vn_results['fMassTemplFuncts'])):
