@@ -224,9 +224,29 @@ if __name__ == "__main__":
 
             # Cut on centrality on mc applied in the preprocessing
             if operations["proj_mc"]:
+                print(f"sparsesReco: {sparsesReco}")
+                print(f"axes: {axes}")
                 for key, iSparse in sparsesReco.items():
-                    iSparse.GetAxis(axes[key]['score_FD']).SetRangeUser(cutVars['score_FD']['min'][iPt], cutVars['score_FD']['max'][iPt])
+                    print('\n\n')
+                    print(f"iPt: {iPt}")
+                    print(f"key: {key}")
+                    print(f"axes: {axes}")
+                    print(f"iSparse: {iSparse}")
+                    print(f"cutVars['score_FD']: {cutVars['score_FD']}")
+                    print(f"cutVars['score_bkg']: {cutVars['score_bkg']}")
+                    print(f"axes[key]['score_FD']: {axes[key]['score_FD']}")
+                    print(f"axes[key]['score_bkg']: {axes[key]['score_bkg']}")
+                    print(f"cutVars['score_FD']['min'][iPt]: {cutVars['score_FD']['min'][iPt]}")
+                    print(f"cutVars['score_FD']['max'][iPt]: {cutVars['score_FD']['max'][iPt]}")
+                    print(f"cutVars['score_bkg']['min'][iPt]: {cutVars['score_bkg']['min'][iPt]}")
+                    print(f"cutVars['score_bkg']['max'][iPt]: {cutVars['score_bkg']['max'][iPt]}")
+                    if iSparse is None:
+                        print(f"Error: iSparse is None for key: {key}")
+                        continue
                     iSparse.GetAxis(axes[key]['score_bkg']).SetRangeUser(cutVars['score_bkg']['min'][iPt], cutVars['score_bkg']['max'][iPt])
+                    print(f"CutBkg!")
+                    iSparse.GetAxis(axes[key]['score_FD']).SetRangeUser(cutVars['score_FD']['min'][iPt], cutVars['score_FD']['max'][iPt])
+                    print('\n\n')
 
                 proj_mc_reco(sparsesReco, ptWeights, ptWeightsB, Bspeciesweights, sPtWeights, sPtWeightsB, write_opt_mc)
                 print("Projected mc reco!")

@@ -122,7 +122,7 @@ def get_pt_preprocessed_sparses(config, iPt):
     print("Loading preprocessed sparses")
     sparsesFlow, sparsesReco, sparsesGen, axes_dict, resolutions = {}, {}, {}, {}, {}
     pre_cfg = config['preprocess']
-    axes_dict['Flow'] = {ax: iax for iax, ax in enumerate(pre_cfg['axes_to_keep']['Data'])}
+    axes_dict['Flow'] = {ax: iax for iax, (ax, _) in enumerate(pre_cfg['axes_data'].items())}
     ptmin = config["ptbins"][iPt]
     ptmax = config["ptbins"][iPt+1]
 
@@ -138,13 +138,13 @@ def get_pt_preprocessed_sparses(config, iPt):
         for key in subdir.GetListOfKeys():
             obj = key.ReadObj()
             sparsesReco[key.GetName()[1:]] = obj
-            axes_dict[key.GetName()[1:]] = {ax: iax for iax, ax in enumerate(pre_cfg['axes_to_keep']['Reco'])}
+            axes_dict[key.GetName()[1:]] = {ax: iax for iax, (ax, _) in enumerate(pre_cfg['axes_reco'].items())}
 
         subdir = infileprep.Get("MC/Gen")
         for key in subdir.GetListOfKeys():
             obj = key.ReadObj()
             sparsesGen[key.GetName()[1:]] = obj
-            axes_dict[key.GetName()[1:]] = {ax: iax for iax, ax in enumerate(pre_cfg['axes_to_keep']['Gen'])}
+            axes_dict[key.GetName()[1:]] = {ax: iax for iax, (ax, _) in enumerate(pre_cfg['axes_gen'].items())}
 
     infileprep.Close()
 

@@ -1,9 +1,9 @@
 operations:
     preprocess_data: true
     preprocess_mc: true
-    make_yaml: false
-    proj_data: false
-    proj_mc: false
+    make_yaml: true
+    proj_data: true
+    proj_mc: true
 
 out_dir: '/home/mdicosta/alice/hf-vn/test_output'
 suffix: 'test'
