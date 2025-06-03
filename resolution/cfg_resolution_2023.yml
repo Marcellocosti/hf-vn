@@ -1,0 +1,20 @@
+output_dir: '/data/mdicosta/DplusFlow/Resolution/2023/'
+reso_output_dir: '/home/mdicosta/alice/hf-vn/resolution/reso_2023_allruns/'
+train_number: 324130
+suffix: '2023'
+num_merged: 1
+threads: 80
+force: True
+merge_all: False
+download_merged_runs: False
+download_single_runs: False
+
+cent_classes: [0, 10, 20, 30, 40, 50, 60, 70, 80]
+
+grid_dirs: [
+    '/data/mdicosta/DplusFlow/Resolution/2023/Train324130/'
+]
+
+grid_runs: [
+    '324130',
+]
