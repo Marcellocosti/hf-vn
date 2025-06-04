@@ -66,7 +66,6 @@ def run_correlated_cut_variation(config, operations, nworkers, outdir):
 	
 	mCutSets = len([f for f in os.listdir(f"{outdir}/cutsets") if os.path.isfile(os.path.join(f"{outdir}/cutsets", f))])
 	print(f"mCutSets: {mCutSets}")
-	# quit()
 #___________________________________________________________________________________________________________________________
 	# Projection for MC and apply the ptweights
 	if operations["proj_mc"] or operations["proj_data"]:

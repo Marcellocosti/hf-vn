@@ -133,10 +133,13 @@ def get_pt_preprocessed_sparses(config, iPt):
     ptmin = config["ptbins"][iPt]
     ptmax = config["ptbins"][iPt+1]
 
-    infileprep = TFile(f"{config['outdir']}/preprocess/AnalysisResults_pt_{int(ptmin*10)}_{int(ptmax*10)}.root")
+    if config.get("outdirprep"):
+        infileprep = TFile(f"{config['outdirprep']}/preprocess/AnalysisResults_pt_{int(ptmin*10)}_{int(ptmax*10)}.root")
+    else:
+        infileprep = TFile(f"{config['outdir']}/preprocess/AnalysisResults_pt_{int(ptmin*10)}_{int(ptmax*10)}.root")
 
     if config["operations"].get("proj_data"):
-        for key, dataset in pre_cfg["data"].items():
+        for key, _ in pre_cfg["data"].items():
             sparsesFlow[f'Flow_{key}'] = infileprep.Get(f'Data_Flow_{key}/hSparseFlowCharm')
             resolutions[f'Reso_Flow_{key}'] = infileprep.Get(f'Data_Flow_{key}/hResolution')
 

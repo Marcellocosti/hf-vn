@@ -6,30 +6,24 @@ import numpy as np
 import argparse
 import itertools
 import copy
-from alive_progress import alive_bar # type: ignore
+from utils import check_dir
 
 def get_reference_config_pt_bin(config_flow, iPtBin):
     # Deepcopy to ensure that we are working with a copy and not modifying the original config_flow
     pt_bin_config = copy.deepcopy(config_flow)
 
+    print(f"pt_bin_config['preprocess']['axes_data']: {pt_bin_config['preprocess']['axes_data']}")
+    axes_dict = {}
+    axes_dict['Flow'] = {ax: iax for iax, (ax, _) in enumerate(pt_bin_config['preprocess']['axes_data'].items())}
+    print(f"axes_dict['Flow']: {axes_dict['Flow']}\n")
+
     # Separate bin-specific keys (those with lists as values) from common settings
-    bin_specific_keys = {key: value for key, value in pt_bin_config.items() if isinstance(value, list)}
-
-    # Keep the common settings (those that are not bin-specific)
     for key, value in pt_bin_config.items():
-        if key not in bin_specific_keys:
-            pt_bin_config[key] = value  # Keep common settings
-
-    # Assign bin-specific values
-    for key, values in bin_specific_keys.items():
-        if key == "axestokeep":
-            pt_bin_config[key] = values
-        elif key != "axestokeep" and key != "flow_files":
-            # this means it is a general setting
-            if len(values) < len(config_flow["ptmins"]) and key.startswith("Templs"):
-                pt_bin_config[key] = values
+        if isinstance(value, list):
+            if key == 'ptbins':
+                pt_bin_config[key] = [value[iPtBin], value[iPtBin+1]]
             else:
-                pt_bin_config[key] = [values[iPtBin]]
+                pt_bin_config[key] = value[iPtBin]
 
     # Modify cut_variation values but leave the original config_flow intact
     if pt_bin_config.get("cut_variation"):
@@ -49,79 +43,91 @@ def modify_yaml_bdt(config_flow, config_mod, output_dir):
     with open(config_mod, 'r') as CfgMod:
         cfg_mod = yaml.safe_load(CfgMod)
 
-    os.makedirs(f"{output_dir}/", exist_ok=True)
-    os.makedirs(f"{output_dir}/config_history/", exist_ok=True)
+    check_dir(f"{output_dir}_multitrial/")
+    os.makedirs(f"{output_dir}_multitrial/", exist_ok=True)
+    os.makedirs(f"{output_dir}_multitrial/config_history/", exist_ok=True)
 
-    with open(os.path.join(f"{output_dir}/config_history/", f"config_reference.yml"), 'w') as out_file:
+    with open(os.path.join(f"{output_dir}_multitrial/config_history/", f"config_reference.yml"), 'w') as out_file:
         yaml.dump(cfg_flow, out_file, default_flow_style=False)
-    with open(os.path.join(f"{output_dir}/config_history/", f"config_modifications.yml"), 'w') as out_file:
+    with open(os.path.join(f"{output_dir}_multitrial/config_history/", f"config_modifications.yml"), 'w') as out_file:
         yaml.dump(cfg_mod, out_file, default_flow_style=False)
 
-    for iPtBin, pt_bin in enumerate(cfg_mod['ptbins']):
+    for _, pt_bin in enumerate(cfg_mod['ptbins']):
         
         ptmin = pt_bin['range'][0]
         ptmax = pt_bin['range'][1]
-        pt_bin_index = cfg_flow['ptmins'].index(ptmin)
+        pt_bin_index = cfg_flow['ptbins'].index(ptmin)
         ref_config_ptbin = get_reference_config_pt_bin(cfg_flow, pt_bin_index)
         
-        os.makedirs(f"{output_dir}/pt_{int(ptmin*10)}_{int(ptmax*10)}/config_sys/", exist_ok=True)
-        output_file = os.path.join(f"{output_dir}/pt_{int(ptmin*10)}_{int(ptmax*10)}/config_sys/", f"config_reference.yml")
+        os.makedirs(f"{output_dir}_multitrial/pt_{int(ptmin*10)}_{int(ptmax*10)}/config_sys/", exist_ok=True)
+        output_file = os.path.join(f"{output_dir}_multitrial/pt_{int(ptmin*10)}_{int(ptmax*10)}/config_sys/", f"config_reference.yml")
         with open(output_file, 'w') as out_file:
             yaml.dump(ref_config_ptbin, out_file, default_flow_style=False)
 
         varied_configs = {}
         print(f"ptbin: {pt_bin}")
-        for var in pt_bin:
-            if var != "range" and var != "inv_mass_bins_steps" and var != "MaxChi2" and var != "MinSignificance" and var != "MaxSignificance" and var != "AnchorTemplsMode":
-                print(f"var: {var}")
-                varied_configs[var] = list(set(ref_config_ptbin[var] + pt_bin[var]))
-            elif var == "inv_mass_bins_steps":
-                varied_configs[var] = pt_bin[var]
-            elif var == "AnchorTemplsMode":
-                varied_configs[var] = pt_bin[var]
-                
+        for var in pt_bin["multitrial"]:
+            print(f"var: {var}")
+            if var in ref_config_ptbin:
+                print("Already in reference config")
+                varied_configs[var] = list(set(ref_config_ptbin[var] + pt_bin["multitrial"][var]))
+            else:
+                print("Not in reference config")
+                varied_configs[var] = pt_bin["multitrial"][var]
 
         # Perform itertools.product to get all combinations
         keys = list(varied_configs.keys())
         values = list(varied_configs.values())
+        print(f"\nvalues: {values}\n")
         combinations = list(itertools.product(*values))
         config_variants = [dict(zip(keys, combination)) for combination in combinations] 
+
+        for config_variant in config_variants:
+            print(f"\nconfig_variant: {config_variant}\n")
 
         # Print results
         for idx, variant in enumerate(config_variants):
             cfg_variant = copy.deepcopy(ref_config_ptbin)
-            for varied_var in variant:
-                if varied_var != "inv_mass_bins_steps" and varied_var != 'AnchorTemplsMode':
-                    if isinstance(ref_config_ptbin[varied_var], list):
-                        cfg_variant[varied_var] = [variant[varied_var]]
-                    else:
-                        cfg_variant[varied_var] = variant[varied_var]
-                if varied_var == 'AnchorTemplsMode' and variant['AnchorTemplsMode'] != -1:
-                    cfg_variant['AnchorTemplsMode'] = variant['AnchorTemplsMode']
-                    cfg_variant['IncludeTempls'] = True
-            cfg_variant["inv_mass_bins"] = [np.arange(variant['MassMin'], variant['MassMax']+variant['inv_mass_bins_steps'], variant['inv_mass_bins_steps']).tolist()]
-            cfg_variant["out_dir"] = f"{output_dir}/pt_{int(ptmin*10)}_{int(ptmax*10)}/trails/"
+
+            # Set directory to preprocessed files
+            cfg_variant["outdirprep"] = ref_config_ptbin['outdir']
+            
+            # Set which operations to perform
+            cfg_variant["operations"]["preprocess_data"] = False
+            cfg_variant["operations"]["preprocess_mc"] = False
+            cfg_variant["operations"]["make_yaml"] = True
+            cfg_variant["operations"]["proj_data"] = True
+            cfg_variant["operations"]["proj_mc"] = True
+            
+            cfg_variant["outdir"] = f"{output_dir}_multitrial/pt_{int(ptmin*10)}_{int(ptmax*10)}/trials/"
             cfg_variant["suffix"] = f"{idx}"
             cfg_variant["nworkers"] = 1 # parallelization is in the bash script
             cfg_variant["MaxChi2"] = pt_bin['MaxChi2']
             cfg_variant["MinSignificance"] = pt_bin['MinSignificance']
             cfg_variant["MaxSignificance"] = pt_bin['MaxSignificance']
-            if cfg_variant["MassMin"][0] > 1.75 or cfg_variant["MassMax"][0] < 1.95:
+            for varied_var in variant:
+                if ref_config_ptbin.get(varied_var):
+                    if isinstance(ref_config_ptbin[varied_var], list):
+                        cfg_variant[varied_var] = [variant[varied_var]]
+                    else:
+                        cfg_variant[varied_var] = variant[varied_var]
+
+            cfg_variant["MassFitRanges"] = [[variant["MassMin"], variant["MassMax"]]]
+            cfg_variant["projections"]["inv_mass_bins"] = [np.arange(variant['MassMin'], variant['MassMax'] + variant['inv_mass_bins_steps'], variant['inv_mass_bins_steps']).tolist()]
+            if variant["MassMin"] > 1.75 or variant["MassMax"] < 1.95:
                 # else the region used for the prefit of the bkg 
                 # function would be empty, leading to a crash
                 cfg_variant["NSigma4SB"] = [2]
 
-            output_file = os.path.join(f"{output_dir}/pt_{int(ptmin*10)}_{int(ptmax*10)}/config_sys/", f"config_var_{idx}.yml")
+            output_file = os.path.join(f"{output_dir}_multitrial/pt_{int(ptmin*10)}_{int(ptmax*10)}/config_sys/", f"config_var_{idx}.yml")
             with open(output_file, 'w') as out_file:
-                yaml.dump(cfg_variant, out_file, default_flow_style=False)
+                yaml.dump(cfg_variant, out_file, default_flow_style=False, sort_keys=False)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Arguments')
     parser.add_argument('input_config', metavar='text', default='config_Ds_Fit.yml')
     parser.add_argument('--modifications_config', "-m", metavar='text', default='')
     parser.add_argument("--outputdir", "-o", metavar="text", default=".", help="output directory")
-    parser.add_argument("--multitrial_bdt", "-mb", action="store_true", default=False,
-                        help="multitrial systematics for BDT")
     args = parser.parse_args()
 
     modify_yaml_bdt(args.input_config,

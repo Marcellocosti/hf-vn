@@ -26,17 +26,17 @@ def proj_data(sparses_dict, reso_dict, axes, inv_mass_bins, proj_scores, writeop
     for var, ax in zip(proj_vars, proj_axes):
         for isparse, (_, sparse) in enumerate(sparses_dict.items()):
             hist_var_temp = sparse.Projection(ax)
-            hist_var_temp.SetName(f'hist_{var}_{isparse}')
+            hist_var_temp.SetName(f'h{var.capitalize()}_{isparse}')
             if isparse == 0:
-                hist_var = hist_var_temp.Clone(f'hist_{var}')
+                hist_var = hist_var_temp.Clone(f'h{var.capitalize()}')
                 hist_var.Reset()
 
             hist_var.Add(hist_var_temp)
 
-        hist_var.Write(f'h{var}_data', writeopt)
+        hist_var.Write(f'h{var.capitalize()}Data', writeopt)
 
     hist_vn_sp = get_vn_versus_mass(sparses_dict, reso_dict, inv_mass_bins, axes['Flow']['Mass'], axes['Flow']['sp'])
-    hist_vn_sp.Write('hVnVsMass', writeopt)
+    hist_vn_sp.Write('hVnVsMassData', writeopt)
 
 def proj_mc_reco(sparsesReco, sPtWeightsD, sPtWeightsB, Bspeciesweights, writeopt):
 
