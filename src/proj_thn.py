@@ -37,8 +37,7 @@ def proj_multitrial(config, config_cutsets):
     in_file_path = f"{original_config['outdir']}/cutvar_{original_config['suffix']}_combined/proj/proj_{icut:02d}.root"
     original_file = TFile.Open(in_file_path, "READ")
     hist_mass_sp = original_file.Get(f"{pt_bin_label}/hMassSpData")
-    preprocess_keys = config['preprocess']['data']
-    first_reso_key = next(iter(preprocess_keys))            # Changes required when more than one dataset will be processed
+    first_reso_key = next(iter(config['preprocess']['data']))            # Changes required when more than one dataset will be processed
     reso = original_file.Get(f"{pt_bin_label}/hResolution_Reso_Flow_{first_reso_key}").GetBinContent(1)
 
     # Open new ROOT file for writing
