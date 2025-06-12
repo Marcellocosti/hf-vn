@@ -14,14 +14,59 @@ from alive_progress import alive_bar
 from scipy.interpolate import make_interp_spline
 sys.path.append(f"{os.path.dirname(os.path.abspath(__file__))}/../utils")
 from sparse_dicts import get_pt_preprocessed_sparses
-from utils import reweight_histo_1D, reweight_histo_2D, reweight_histo_3D, get_vn_versus_mass, make_dir_root_file
+from utils import reweight_histo_1D, reweight_histo_2D, reweight_histo_3D, get_vn_versus_mass, profile_mass_sp, make_dir_root_file
 
 ROOT.TH1.AddDirectory(False)
+
+import yaml
+from ROOT import TFile
+
+def proj_multitrial(config, config_cutsets):
+    # Load the original YAML config
+    with open(config['OriginalConfig'], 'r') as ymlCfgFile:
+        original_config = yaml.load(ymlCfgFile, yaml.FullLoader)
+
+    print("Processing multitrial projections...")
+
+    # Define the pt bin directory name
+    pt_bin_label = f"pt_{int(config_cutsets['Pt']['min'][0] * 10)}_{int(config_cutsets['Pt']['max'][0] * 10)}"
+    icut = config_cutsets['icutset']
+    trial = config['iTrial']
+
+    # Input and output file paths
+    in_file_path = f"{original_config['outdir']}/cutvar_{original_config['suffix']}_combined/proj/proj_{icut:02d}.root"
+    original_file = TFile.Open(in_file_path, "READ")
+    hist_mass_sp = original_file.Get(f"{pt_bin_label}/hMassSpData")
+    preprocess_keys = config['preprocess']['data']
+    first_reso_key = next(iter(preprocess_keys))            # Changes required when more than one dataset will be processed
+    reso = original_file.Get(f"{pt_bin_label}/hResolution_Reso_Flow_{first_reso_key}").GetBinContent(1)
+
+    # Open new ROOT file for writing
+    out_file_path = f"{config['outdir']}/cutvar_{trial}_combined/proj/proj_{icut:02d}.root"
+    output_file = TFile.Open(out_file_path, "RECREATE")
+    output_file.mkdir(pt_bin_label)
+    output_file.cd(pt_bin_label)
+
+    # Project mass axis and write it
+    hist_mass_sp.ProjectionX().Write("hMassData")
+    # Compute vn vs mass profile histogram
+    hist_vn_vs_mass = profile_mass_sp(hist_mass_sp, config['projections']['inv_mass_bins'][0], reso)
+    hist_vn_vs_mass.SetName("hVnVsMassData")
+    hist_vn_vs_mass.Write()
+
+    print(f"Saved histograms to {out_file_path} under '{pt_bin_label}'")
+
+    # Close files
+    original_file.Close()
+    output_file.Close()
 
 def proj_data(sparses_dict, reso_dict, axes, inv_mass_bins, proj_scores, writeopt):
 
     proj_vars = ['Mass', 'sp', 'score_FD', 'score_bkg'] if proj_scores else ['Mass', 'sp']
     proj_axes = [axes['Flow'][var] for var in proj_vars]
+
+    for reso_name, reso in reso_dict.items():
+        reso.Write(f'hResolution_{reso_name}', writeopt)
 
     for var, ax in zip(proj_vars, proj_axes):
         for isparse, (_, sparse) in enumerate(sparses_dict.items()):
@@ -37,6 +82,34 @@ def proj_data(sparses_dict, reso_dict, axes, inv_mass_bins, proj_scores, writeop
 
     hist_vn_sp = get_vn_versus_mass(sparses_dict, reso_dict, inv_mass_bins, axes['Flow']['Mass'], axes['Flow']['sp'])
     hist_vn_sp.Write('hVnVsMassData', writeopt)
+
+    # Save a TH2 of (Mass, Sp) for the multitrial systematic
+    mass_lowest_bin, mass_highest_bin, sp_lowest_bin, sp_highest_bin = -1, 1e10, -1, 1e10
+    for isparse, (_, sparse) in enumerate(sparses_dict.items()):
+        hist_mass_sp_temp = sparse.Projection(axes['Flow']['sp'], axes['Flow']['Mass'])
+        hist_mass_sp_temp.SetName(f'hMassSp_{isparse}')
+        if isparse == 0:
+            hist_mass_sp = hist_mass_sp_temp.Clone(f'hMassSp')
+            hist_mass_sp.Reset()
+            sp_lowest_bin = hist_mass_sp_temp.ProjectionY().FindFirstBinAbove(0)
+            sp_highest_bin = hist_mass_sp_temp.ProjectionY().FindLastBinAbove(0)
+            mass_lowest_bin = hist_mass_sp_temp.ProjectionX().FindFirstBinAbove(0)
+            mass_highest_bin = hist_mass_sp_temp.ProjectionX().FindLastBinAbove(0)
+        else:
+            if hist_mass_sp_temp.ProjectionY().FindFirstBinAbove(0) < sp_lowest_bin:
+                sp_lowest_bin = hist_mass_sp_temp.ProjectionY().FindFirstBinAbove(0)
+            if hist_mass_sp_temp.ProjectionY().FindLastBinAbove(0) > sp_highest_bin:
+                sp_highest_bin = hist_mass_sp_temp.ProjectionY().FindLastBinAbove(0)
+            if hist_mass_sp_temp.ProjectionX().FindFirstBinAbove(0) < mass_lowest_bin:
+                mass_lowest_bin = hist_mass_sp_temp.ProjectionX().FindFirstBinAbove(0)
+            if hist_mass_sp_temp.ProjectionX().FindLastBinAbove(0) > mass_highest_bin:
+                mass_highest_bin = hist_mass_sp_temp.ProjectionX().FindLastBinAbove(0)
+
+        hist_mass_sp.Add(hist_mass_sp_temp)
+
+    hist_mass_sp.GetXaxis().SetRange(mass_lowest_bin, mass_highest_bin)
+    hist_mass_sp.GetYaxis().SetRange(sp_lowest_bin, sp_highest_bin)
+    hist_mass_sp.Write(f'hMassSpData', writeopt)
 
 def proj_mc_reco(sparsesReco, sPtWeightsD, sPtWeightsB, Bspeciesweights, writeopt):
 
@@ -178,8 +251,10 @@ if __name__ == "__main__":
     parser.add_argument('--cutsetConfig', "-cc", metavar='text', type=str, nargs='?',
                         const=None, default='cutsetConfig.yaml',
                         help='Optional cutset configuration file (default: cutsetConfig.yaml)')
-    parser.add_argument("--correlated", "-c", action="store_true", 
-                        help="Produce yml files for correlated cuts")
+    parser.add_argument("--correlated", "-c", action="store_true",
+                        help="Produce projection files for correlated cuts")
+    parser.add_argument("--multitrial", "-mult", action="store_true",
+                        help="Produce projection files for multitrial systematics")
     args = parser.parse_args()
 
     with open(args.config, 'r') as ymlCfgFile:
@@ -190,6 +265,11 @@ if __name__ == "__main__":
         cutSetCfg = yaml.load(ymlCutSetFile, yaml.FullLoader)
         iCut = f"{int(cutSetCfg['icutset']):02d}"
     cutVars = cutSetCfg['cutvars']
+
+    if args.multitrial:
+        print(f"\n\nRunning multitrial projections for cutset {iCut}!")
+        proj_multitrial(config, cutSetCfg)
+        sys.exit(0)
 
     method = "correlated" if args.correlated else "combined"
     outDir = config['outdir'] + f'/cutvar_{config["suffix"]}_{method}/proj/'
@@ -240,5 +320,5 @@ if __name__ == "__main__":
 
             print('\n\n')
             bar()
-    
+
     outfile.Close()

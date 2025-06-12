@@ -21,6 +21,32 @@ def make_dir_root_file(dir, file):
     if not file.GetDirectory(dir):
         file.mkdir(dir)
 
+def profile_mass_sp(hist_mass_sp, inv_mass_bins, resolution):
+    '''
+    Profile the mass sparse to get vn versus mass
+    Input:
+        - hist_mass_sp:
+            THnSparse, input THnSparse object (already projected in centrality and pt)
+        - inv_mass_bins:
+            list of floats, bin edges for the mass axis
+        - resolution:
+            float, resolution to normalize the vn values
+    Output:
+        - hist_vn_vs_mass:
+            TH1D, histogram with vn as a function of mass
+    '''
+    hist_vn_vs_mass = ROOT.TH1D('hist_vn_vs_mass', 'hist_vn_vs_mass', len(inv_mass_bins)-1, np.array(inv_mass_bins))
+    hist_vn_vs_mass.SetDirectory(0)
+    for i in range(hist_vn_vs_mass.GetNbinsX()):
+        bin_low = hist_mass_sp.GetXaxis().FindBin(inv_mass_bins[i])
+        bin_high = hist_mass_sp.GetXaxis().FindBin(inv_mass_bins[i+1])
+        profile = hist_mass_sp.ProfileY(f'profile_{bin_low}_{bin_high}', bin_low, bin_high)
+        mean_sp = profile.GetMean()
+        mean_sp_err = profile.GetMeanError()
+        hist_vn_vs_mass.SetBinContent(i+1, mean_sp / resolution)
+        hist_vn_vs_mass.SetBinError(i+1, mean_sp_err / resolution)
+    return hist_vn_vs_mass
+
 def get_vn_versus_mass(thnSparses, resolutions, inv_mass_bins, mass_axis, vn_axis, sampling=-1, debug=False):
     '''
     Project vn versus mass
@@ -43,8 +69,6 @@ def get_vn_versus_mass(thnSparses, resolutions, inv_mass_bins, mass_axis, vn_axi
     '''
 
     invmass_bins = np.array(inv_mass_bins)
-    hist_vn_vs_mass = ROOT.TH1D('hist_vn_vs_mass', 'hist_vn_vs_mass', len(inv_mass_bins)-1, np.array(inv_mass_bins))
-    hist_vn_vs_mass.SetDirectory(0)
 
     if sampling != -1:
         print('Sampling vn versus mass to be implemented!')
@@ -62,14 +86,7 @@ def get_vn_versus_mass(thnSparses, resolutions, inv_mass_bins, mass_axis, vn_axi
 
             hist_vn_proj.Add(hist_vn_proj_temp)
 
-        for i in range(hist_vn_vs_mass.GetNbinsX()):
-            bin_low = hist_vn_proj.GetXaxis().FindBin(invmass_bins[i])
-            bin_high = hist_vn_proj.GetXaxis().FindBin(invmass_bins[i+1])
-            profile = hist_vn_proj.ProfileY(f'profile_{bin_low}_{bin_high}', bin_low, bin_high)
-            mean_sp = profile.GetMean()
-            mean_sp_err = profile.GetMeanError()
-            hist_vn_vs_mass.SetBinContent(i+1, mean_sp / resolution)
-            hist_vn_vs_mass.SetBinError(i+1, mean_sp_err / resolution)
+        hist_vn_vs_mass = profile_mass_sp(hist_vn_proj, invmass_bins, resolution)
 
     if debug:
         outfile = ROOT.TFile('debug.root', 'RECREATE')

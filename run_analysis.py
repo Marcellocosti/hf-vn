@@ -34,11 +34,12 @@ def make_yaml(config, outdir, correlated=False, combined=False):
 	if combined:
 		os.system(f"python3 {paths['YamlCuts']} {config} -o {outdir}")
 
-def project(config, nworkers, mCutSets, correlated=True):
+def project(config, nworkers, mCutSets, correlated=True, multitrial=False):
 	print("\033[32mINFO: Projections will be performed\033[0m")
 	check_dir(f"{outdir}/proj")
 
 	method = "--correlated" if correlated else ""
+	multitrial = "--multitrial" if multitrial else ""
 
 	def run_projections(i):
 		"""Run sparse projection for a given cutset index."""
@@ -47,7 +48,7 @@ def project(config, nworkers, mCutSets, correlated=True):
 
 		config_cutset = f"{outdir}/cutsets/cutset_{iCutSets}.yml"
 		cmd = (
-			f"python3 {paths['Projections']} {config} -cc {config_cutset} {method}"
+			f"python3 {paths['Projections']} {config} -cc {config_cutset} {method} {multitrial}"
 		)
 		print(f"\033[32m{cmd}\033[0m")
 		os.system(cmd)
@@ -87,8 +88,8 @@ def run_combined_cut_variation(config, operations, nworkers, outdir):
 
 #___________________________________________________________________________________________________________________________
 	# Projection for MC and apply the ptweights
-	if operations["proj_mc"] or operations["proj_data"]:
-		project(config, nworkers, mCutSets, correlated=False)
+	if operations["proj_mc"] or operations["proj_data"] or operations.get('proj_multitrial', False):
+		project(config, nworkers, mCutSets, correlated=False, multitrial=operations.get('proj_multitrial', False))
 	else:
 		print("\033[33mWARNING: Projections will not be performed\033[0m")
 

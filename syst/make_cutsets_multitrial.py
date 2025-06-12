@@ -6,6 +6,8 @@ import numpy as np
 import argparse
 import itertools
 import copy
+import sys
+sys.path.append(f"{os.path.dirname(os.path.abspath(__file__))}/../utils")
 from utils import check_dir
 
 def get_reference_config_pt_bin(config_flow, iPtBin):
@@ -88,6 +90,8 @@ def modify_yaml_bdt(config_flow, config_mod, output_dir):
         # Print results
         for idx, variant in enumerate(config_variants):
             cfg_variant = copy.deepcopy(ref_config_ptbin)
+            cfg_variant["iTrial"] = idx
+            cfg_variant["OriginalConfig"] = config_flow
 
             # Set directory to preprocessed files
             cfg_variant["outdirprep"] = ref_config_ptbin['outdir']
@@ -96,8 +100,9 @@ def modify_yaml_bdt(config_flow, config_mod, output_dir):
             cfg_variant["operations"]["preprocess_data"] = False
             cfg_variant["operations"]["preprocess_mc"] = False
             cfg_variant["operations"]["make_yaml"] = True
-            cfg_variant["operations"]["proj_data"] = True
-            cfg_variant["operations"]["proj_mc"] = True
+            cfg_variant["operations"]["proj_data"] = False
+            cfg_variant["operations"]["proj_mc"] = False
+            cfg_variant["operations"]["proj_multitrial"] = True
             
             cfg_variant["outdir"] = f"{output_dir}_multitrial/pt_{int(ptmin*10)}_{int(ptmax*10)}/trials/"
             cfg_variant["suffix"] = f"{idx}"
@@ -118,6 +123,7 @@ def modify_yaml_bdt(config_flow, config_mod, output_dir):
                 # else the region used for the prefit of the bkg 
                 # function would be empty, leading to a crash
                 cfg_variant["NSigma4SB"] = [2]
+
 
             output_file = os.path.join(f"{output_dir}_multitrial/pt_{int(ptmin*10)}_{int(ptmax*10)}/config_sys/", f"config_var_{idx}.yml")
             with open(output_file, 'w') as out_file:

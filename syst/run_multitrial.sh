@@ -1,13 +1,15 @@
 #!/bin/bash
 
 export n_parallel=10
-export config_modifies="/home/mdicosta/alice/hf-vn/configs/systMultitrial.yml"
+export config_modifies="/home/mdicosta/alice/hf-vn/syst/systMultitrial.yml"
 export config_default="/home/mdicosta/alice/hf-vn/configs/test_config.yml"
 export output_dir="/home/mdicosta/alice/hf-vn/test_output/cutvar_test"
+export multitrial_cutsets_script="/home/mdicosta/alice/hf-vn/syst/make_cutsets_multitrial.py"
+export run_analysis_script="/home/mdicosta/alice/hf-vn/run_analysis.py"
 
 # Generate YAML file list with indices
 echo "Generating yaml files for systematics ..."
-python3 /home/mdicosta/alice/hf-vn/make_cutsets_multitrial.py $config_default -m $config_modifies -o $output_dir
+python3 $multitrial_cutsets_script $config_default -m $config_modifies -o $output_dir
 yaml_files=($(find "$output_dir" -type f -name "config_var_*.yml" -print0 | xargs -0 -n1))
 echo "Yaml files generated!"
 echo "${yaml_files[@]}"
@@ -27,7 +29,7 @@ for dir in "${pt_dirs[@]}"; do
     # Perform projections (and fitting)
     for yaml_file in "${yaml_files[@]}"; do
         echo "Processing YAML file: $yaml_file"
-        python3 /home/mdicosta/alice/hf-vn/run_analysis.py "$yaml_file" --combined
+        python3 $run_analysis_script "$yaml_file" --combined
     done
 
 done
