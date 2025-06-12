@@ -59,7 +59,41 @@ def proj_multitrial(config, config_cutsets):
     original_file.Close()
     output_file.Close()
 
-def proj_data(sparses_dict, reso_dict, axes, inv_mass_bins, proj_scores, writeopt):
+def proj_data_cms(sparses_dict, axes, sp_ranges, sp_windows_nbins):
+
+    # first_key = next(iter(sparses_dict))
+    # axis_sp = sparses_dict[first_key].GetAxis(axes['Flow']['sp'])
+    # sp_bins = axis_sp.GetNbins()
+    # sp_edges = [axis_sp.GetBinLowEdge(i) for i in range(1, sp_bins + 2, sp_windows_nbins) if abs(axis_sp.GetBinLowEdge(i)) < sp_ranges]
+
+    for isparse, (_, sparse) in enumerate(sparses_dict.items()):
+        hist_mass_sp_temp = sparse.Projection(axes['Flow']['sp'], axes['Flow']['Mass'])
+        hist_mass_sp_temp.SetName(f'hMassSp_{isparse}')
+        if isparse == 0:
+            hist_mass_sp = hist_mass_sp_temp.Clone(f'hMassSp')
+            hist_mass_sp.Reset()
+
+        hist_mass_sp.Add(hist_mass_sp_temp)
+
+    hist_mass_sp.Write(f'hMassSp')
+
+
+    # for sp_min, sp_max in zip(sp_edges[:-1], sp_edges[1:]):
+    #     for isparse, (_, sparse) in enumerate(sparses_dict.items()):
+    #         print(f"sp_min = {sp_min}, sp_max = {sp_max}")
+    #         sparse.GetAxis(axes['Flow']['sp']).SetRangeUser(sp_min, sp_max)
+    #         hist_var_temp = sparse.Projection(axes['Flow']['Mass'])
+    #         hist_var_temp.SetName(f'hMass_{isparse}')
+    #         if isparse == 0:
+    #             hist_var = hist_var_temp.Clone(f'hMass')
+    #             hist_var.Reset()
+
+    #         hist_var.Add(hist_var_temp)
+
+    #     hist_var.Write(f'hMass_{sp_min:.2f}_{sp_max:.2f}')
+    print(f"Projected data with CMS method ended!")
+
+def proj_data_simfit(sparses_dict, reso_dict, axes, inv_mass_bins, proj_scores, writeopt):
 
     proj_vars = ['Mass', 'sp', 'score_FD', 'score_bkg'] if proj_scores else ['Mass', 'sp']
     proj_axes = [axes['Flow'][var] for var in proj_vars]
@@ -304,7 +338,12 @@ if __name__ == "__main__":
                 for key, sparse in sparsesFlow.items():
                     sparse.GetAxis(axes['Flow']['score_FD']).SetRangeUser(fd_min, fd_max)
                     sparse.GetAxis(axes['Flow']['score_bkg']).SetRangeUser(bkg_min, bkg_max)
-                proj_data(sparsesFlow, resolutions, axes, config["projections"]['inv_mass_bins'][iPt], config["projections"].get('storeML'), write_opt_data)
+                if config['projections'].get("CMSMethod"):
+                    print("Projecting data with CMS method!")
+                    proj_data_cms(sparsesFlow, axes, config["projections"]['sp_ranges'][iPt], config["projections"]['sp_windows_nbins'][iPt])
+                else:
+                    proj_data_simfit(sparsesFlow, resolutions, axes, config["projections"]['inv_mass_bins'][iPt], config["projections"].get('storeML'), write_opt_data)
+                proj_data_simfit(sparsesFlow, resolutions, axes, config["projections"]['inv_mass_bins'][iPt], config["projections"].get('storeML'), write_opt_data)
                 print(f"Projected data!")
 
             if operations["proj_mc"]:
