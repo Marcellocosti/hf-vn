@@ -9,7 +9,8 @@ import yaml
 import argparse
 import sys
 import os
-from ROOT import TFile, TObject
+import array
+from ROOT import TFile, TObject, TH2D
 from alive_progress import alive_bar
 from scipy.interpolate import make_interp_spline
 sys.path.append(f"{os.path.dirname(os.path.abspath(__file__))}/../utils")
@@ -140,9 +141,39 @@ def proj_data_simfit(sparses_dict, reso_dict, axes, inv_mass_bins, proj_scores, 
 
         hist_mass_sp.Add(hist_mass_sp_temp)
 
-    hist_mass_sp.GetXaxis().SetRange(mass_lowest_bin, mass_highest_bin)
-    hist_mass_sp.GetYaxis().SetRange(sp_lowest_bin, sp_highest_bin)
-    hist_mass_sp.Write(f'hMassSpData', writeopt)
+    mass_axis = hist_mass_sp.GetXaxis()
+    sp_axis = hist_mass_sp.GetYaxis()
+
+    edges_mass_axis = [mass_axis.GetBinLowEdge(i) for i in range(mass_lowest_bin, mass_highest_bin + 1)]
+    edges_mass_axis.append(mass_axis.GetBinUpEdge(mass_highest_bin))  # include upper edge of last bin
+
+    print(f"\n\nMass axis edges: {edges_mass_axis}")
+
+    edges_sp_axis = [sp_axis.GetBinLowEdge(i) for i in range(sp_lowest_bin, sp_highest_bin + 1)]
+    edges_sp_axis.append(sp_axis.GetBinUpEdge(sp_highest_bin))  # include upper edge of last bin
+
+    print(f"\n\nSp axis edges: {edges_sp_axis}")
+
+    # Convert Python lists to C-style arrays using `array.array`
+    edges_mass_axis_array = array.array('d', edges_mass_axis)
+    edges_sp_axis_array = array.array('d', edges_sp_axis)
+
+    # Number of bins is len(edges) - 1
+    nbins_mass = len(edges_mass_axis_array) - 1
+    nbins_sp = len(edges_sp_axis_array) - 1
+
+    # Create the histogram
+    hist_mass_sp_reduced = TH2D("hMassSp_Custom", "Mass vs Sp (custom bins)",
+                                nbins_mass, edges_mass_axis_array,
+                                nbins_sp, edges_sp_axis_array)
+
+    # Fill the new histogram
+    for iBinXReduced, iBinX in enumerate(range(mass_lowest_bin, mass_highest_bin + 1)):
+        for iBinYReduced, iBinY in enumerate(range(sp_lowest_bin, sp_highest_bin + 1)):
+            bin_content = hist_mass_sp.GetBinContent(iBinX, iBinY)
+            hist_mass_sp_reduced.SetBinContent(iBinXReduced+1, iBinYReduced+1, bin_content)
+
+    hist_mass_sp_reduced.Write(f'hMassSpData', writeopt)
 
 def proj_mc_reco(sparsesReco, sPtWeightsD, sPtWeightsB, Bspeciesweights, writeopt):
 
