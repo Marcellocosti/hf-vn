@@ -289,11 +289,11 @@ if __name__ == "__main__":
     else:
         sys.exit(0)
 
-    write_opt_data = TObject.kOverwrite if operations["proj_data"] else 0 
-    write_opt_mc = TObject.kOverwrite if operations["proj_mc"] else 0 
+    write_opt_data = TObject.kOverwrite if operations.get("proj_data") else 0 
+    write_opt_mc = TObject.kOverwrite if operations.get("proj_mc") else 0 
 
     # compute info for pt weights
-    if operations["proj_mc"]:
+    if operations.get("proj_mc"):
         sPtWeightsD, sPtWeightsB, Bspeciesweights = get_pt_weights(config["projections"]) if config['projections'].get('PtWeightsFile') else (None, None, None)
 
     with alive_bar(len(cutSetCfg['Pt']['min']), title='Processing pT bins') as bar:
@@ -314,7 +314,7 @@ if __name__ == "__main__":
                 proj_data(sparsesFlow, resolutions, axes, config["projections"]['inv_mass_bins'][iPt], config["projections"].get('storeML'), write_opt_data)
                 print(f"Projected data!")
 
-            if operations["proj_mc"]:
+            if operations.get("proj_mc"):
                 for key, iSparse in sparsesReco.items():
                     iSparse.GetAxis(axes[key]['ScoreBkg']).SetRangeUser(bkg_min, bkg_max)
                     iSparse.GetAxis(axes[key]['ScoreFD']).SetRangeUser(fd_min, fd_max)

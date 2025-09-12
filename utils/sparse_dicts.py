@@ -3,7 +3,7 @@ from alive_progress import alive_bar
 import os
 from ROOT import TFile # pyright: ignore # type: ignore
 sys.path.append("./")
-from utils import logger
+from utils import logger, get_centrality_bins
 
 def get_sparses_dicts(config, beforeDMesonPR = False):
     
@@ -220,7 +220,9 @@ def get_sparses(config, get_data=True, get_mc=True, debug=False, MCBeforePRDplus
             det_A = config.get('detA', 'FT0c')
             det_B = config.get('detB', 'FV0a')
             det_C = config.get('detC', 'TPCtot')
-            resolutions[f"Reso_Flow_{name}"] = resofile.Get(f'{det_A}_{det_B}_{det_C}/histo_reso_delta_cent')
+            _, (centMin, centMax) = get_centrality_bins(config["centrality"])
+            print(f"cent_{centMin}_{centMax}/{det_A}_{det_B}_{det_C}/histo_reso_delta_cent")
+            resolutions[f"Reso_Flow_{name}"] = resofile.Get(f'cent_{centMin}_{centMax}/{det_A}_{det_B}_{det_C}/histo_reso_delta_cent')
             resolutions[f"Reso_Flow_{name}"].SetDirectory(0)
             resofile.Close()
 

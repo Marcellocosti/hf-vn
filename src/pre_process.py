@@ -92,6 +92,7 @@ def process_pt_bin_data(config, ptmin, ptmax, centmin, centmax, bkg_max_cut, deb
                     proj_sparse.Delete()  # Delete the original projection to save memory
                     del proj_sparse
                     gc.collect()
+                print(f"\t\t[Data] After adding sparse {iSparse}, merged_sparse_pt.GetEntries() = {merged_sparse_pt.GetEntries()}", flush=True)
                 bar()
         make_dir_root_file(f'Data_{key}', outFile)
         logger(f'\t[Data] Writing sparse for {key} with {merged_sparse_pt.GetNdimensions()} dimensions')
@@ -217,7 +218,7 @@ def pre_process_data_mc(config):
             tasks_reso = [executor.submit(write_pt_bin_reso, ptmin, ptmax, outputDir, resolutions, data_sparses) for ptmin, ptmax in zip(ptmins, ptmaxs)]
         logger("Finished processing resolutions")
 
-    if config["operations"]["preprocess_mc"] and config['preprocess'].get('mc'):
+    if config["operations"].get("preprocess_mc") and config['preprocess'].get('mc'):
         logger("##### Skimming Monte Carlo #####")
         ### Centrally cut on centrality and max of bkg scores
         for key, sparse_type in reco_sparses.items():

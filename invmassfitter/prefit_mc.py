@@ -7,7 +7,7 @@ import os
 script_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(f'{script_dir}/../')
 print(f'{script_dir}/../')
-from flow_analysis_utils import get_centrality_bins
+from utils import get_centrality_bins
 
 # Set ROOT batch mode
 gROOT.SetBatch(1)

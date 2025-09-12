@@ -270,6 +270,8 @@ def get_vn_vs_mass(fitConfigFileName, inFileName, batch, isMultitrial):
     vnFitter = []
     for iPt, (hM, hV, ptMin, ptMax, reb, sgnEnum, bkgEnum, bkgVnEnum, secPeak, massMin, massMax) in enumerate(
             zip(hMass, hVn, ptmins, ptmaxs, rebins, SgnFunc, BkgFunc, BkgFuncVn, inclSecPeak, massFitLows, massFitHighs)):
+        print(f"iPt: {iPt}")
+        # continue
         iCanv = iPt
         hMassForFit.append(TH1F())
         hVnForFit.append(TH1F())
@@ -364,26 +366,7 @@ def get_vn_vs_mass(fitConfigFileName, inFileName, batch, isMultitrial):
                     corrBkgsWeights.append(weightsCorrBkgs.GetBinContent(
                         weightsCorrBkgs.GetXaxis().FindBin(f"{finStateName}_{resoName}")
                     ))
-            # ptSubdir = corrBkgFile.Get(f"{pt_dir}")
-            # for finStateDirKey in ptSubdir.GetListOfKeys():
-            #     # print(f"finStateDir: {finStateDir}")
-            #     # # quit()
-            #     # print(f"pt_dir/finStateDir: {pt_dir}/{finStateDir}")
-            #     finStateSubDir = corrBkgFile.Get(f"{pt_dir}/{finStateDirKey}")
-            #     # print(f"chnSubdir: {chnSubdir}")
-            #     for resoStateDirKey in finStateSubDir.GetListOfKeys():
-            #         # print(f"key: {key}, type histo: {chnSubdir.Get(f"{key.GetName()}/hMass")}")
-            #         # if isinstance(chnSubdir.Get(f"{key.GetName()}/hMass"), TH1):
-            #         corrBkgsNames.append(f"{finStateDirKey}_{resoStateDirKey.GetName()}")
-            #         corrBkgsHistos.append(finStateSubDir.Get(f"{resoStateDirKey.GetName()}/hMass"))
-            #         corrBkgsWeights.append(weightsCorrBkgs.GetBinContent(weightsCorrBkgs.GetXaxis().FindBin(f"{corrBkgChn}_{resoStateDirKey.GetName()}")))
-            #         # else:
-            #         #     print(f"\nChannel {corrBkgChn}_{key.GetName()} has no entries")
 
-            print(f"\n\n\ncorrBkgsNames: {corrBkgsNames}")
-            # print(f"corrBkgsHistos: {corrBkgsHistos}")
-            # print(f"corrBkgsWeights: {corrBkgsWeights}")
-            # quit()
             print(f"Setting template parameters .....")
             vnFitter[iPt].SetTemplatesHisto(corrBkgsHistos, corrBkgsWeights, configfit['CorrBkgsAnchorMode'])
             print("Histo templates set!")
@@ -442,12 +425,15 @@ def get_vn_vs_mass(fitConfigFileName, inFileName, batch, isMultitrial):
             gvnUnc.SetPointError(iPt, (ptMax-ptMin)/2, (ptMax-ptMin)/2, 1.e-20, 1.e-20)
             hPulls.append(vnResults['pulls'])
 
+            print("Appending total mass function ...")
             fTotFuncMass.append(vnResults['fTotFuncMass'])
             fTotFuncVn.append(vnResults['fTotFuncVn'])
             fSgnFuncMass.append(vnResults['fSgnFuncMass'])
             fBkgFuncMass.append(vnResults['fBkgFuncMass'])
             fBkgFuncVn.append(vnResults['fBkgFuncVn'])
-            
+
+            print(f"fTotFuncMass: {fTotFuncMass}")
+            print(f"iPt: {iPt}")
             SetObjectStyle(fTotFuncMass[iPt], color=kAzure+4, linewidth=3)
             SetObjectStyle(fSgnFuncMass[iPt], fillcolor=kAzure+4, fillstyle=1000, linewidth=0, fillalpha=0.3)
             SetObjectStyle(fBkgFuncMass[iPt], color=kOrange+1, linestyle=9, linewidth=2)

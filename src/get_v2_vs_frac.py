@@ -16,14 +16,15 @@ import re
 import uproot
 from ROOT import TLatex, TFile, TCanvas, TLegend, TH1D, TH1F, TDatabasePDG, TGraphAsymmErrors, TKDE # pylint: disable=import-error,no-name-in-module
 from ROOT import gROOT, gPad, gInterpreter, kBlack, kRed, kAzure, kCyan, kBlue, kGray, kOrange, kGreen, kMagenta, kFullCircle, kFullSquare, kOpenCircle # pylint: disable=import-error,no-name-in-module
-from flow_analysis_utils import get_centrality_bins, get_vnfitter_results, get_ep_vn, get_refl_histo, get_particle_info # pylint: disable=import-error,no-name-in-module
+from flow_analysis_utils import get_vnfitter_results, get_ep_vn, get_refl_histo, get_particle_info # pylint: disable=import-error,no-name-in-module
+from utils import get_centrality_bins
 sys.path.append('../../..')
 sys.path.append('../..')
 import os
 script_dir = os.path.dirname(os.path.realpath(__file__))
 gInterpreter.ProcessLine(f'#include "{script_dir}/invmassfitter/InvMassFitter.cxx"')
 gInterpreter.ProcessLine(f'#include "{script_dir}/invmassfitter/VnVsMassFitter.cxx"')
-quit()
+# quit()
 from ROOT import InvMassFitter, VnVsMassFitter
 from utils.StyleFormatter import SetGlobalStyle, SetObjectStyle, DivideCanvas
 from utils.FitUtils import SingleGaus, DoubleGaus, DoublePeakSingleGaus, DoublePeakDoubleGaus, RebinHisto
