@@ -5,8 +5,8 @@ import shutil
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 import argparse
-import yaml
 from ROOT import TFile, THnSparse
+import yaml
 
 def split_into_three(lst):
     # Calculate the base size of each sublist and the remainder
@@ -25,86 +25,29 @@ def split_into_three(lst):
     
     return sublists
 
-def load_single_runs(config, output_dir, log_lines):
-    # Iterate through runs
-    threads = config["threads"]
-    for run in config['single_runs']:
-        run_number = run['number']  # Assuming the run dictionary has a "number" key
-        folder = run['folder']
-        num_merged = run['num_merged']
-
-        # Create output directory if it doesn't exist
-        os.makedirs(output_dir, exist_ok=True)
-
-        # Step 1: Download files using alien_cp
-        with ThreadPoolExecutor(max_workers=threads) as executor:
-            downloads = [executor.submit(download_file, f"{folder}/{job:04d}", f"{job:04d}", f"{output_dir}/single_runs/{run_number}") for job in range(run['njobs'] + 1)]
-
-        for job in range(run['njobs'] + 1):
-            if not os.path.isfile(f"{output_dir}/single_runs/{run_number}/{job:04d}/AnalysisResults.root"):
-                # log_lines.append(f"Checked {output_dir}/single_runs/{run_number}/{job:04d}/AnalysisResults.root\n")
-                log_lines.append(f"[Run: {run_number}, Job: {job}] AnalysisResults.root not found for job: {job}\n")
-
-        # Step 2: Find all downloaded files
-        command = f'find {output_dir}/single_runs/{run_number} -wholename "*/AnalysisResults.root" | tr "\n" " "'
-        print(f"command: {command}")
-        result = subprocess.run(command, shell=True, text=True, capture_output=True)
-        output_list = result.stdout.strip().split()
-        print(f"Files found: {len(output_list)}")
-        print(output_list)
-        print('\n\n')
-
-        if config["merge_all"]:
-            # Step 3: Split files into sublists for merging
-            total_files = len(output_list)
-            files_per_merge = max(1, total_files // num_merged)
-            sublists = [output_list[i:i + files_per_merge] for i in range(0, total_files, files_per_merge)]
-
-            # Step 4: Merge the files in parallel
-            for i, sublist in enumerate(sublists):
-                merge_name = f"{output_dir}/MERGED_{run_number}_{i}.root"
-                merge_command = f"hadd -f {merge_name} " + " ".join(sublist)
-                print(f"\n[Merging] {merge_command}")
-                os.system(merge_command)
-
-    print("All jobs completed.")
-    return log_lines
-
-def download_file(file_path, run, output_dir):
-    os.makedirs(output_dir, exist_ok=True)
-    command = f"alien_cp {file_path}/AnalysisResults.root file:{output_dir}/{run}/"
+def download_file(line, run, output_dir):
+    line = line.strip()
+    dest_dir = f"{output_dir}/runs/{run}"
+    os.makedirs(dest_dir, exist_ok=True)
+    command = f"alien_cp {line}/AnalysisResults.root file:{dest_dir}/"
     print(f"[Downloading] {command}")
     os.system(command)
-    input_file = Path(f"{output_dir}/runs/{run}/AnalysisResults.root")  # check copying of file
+    input_file = Path(dest_dir + "/AnalysisResults.root")  # check copying of file
     return command, input_file # Optionally return something for logging
 
-def merge_files(sublist, merge_name, sparse_path='', force=False):
+def merge_files(sublist, merge_name, sparse_path, force):
     merge_command = f"hadd -f {merge_name} " + " ".join(sublist) if force else f"hadd {merge_name} " + " ".join(sublist)
     print(f"\n[Merging] {merge_command}")
     os.system(merge_command)
     merged_file = TFile.Open(merge_name, 'r')
-    if sparse_path != '':
-        status = True if isinstance(merged_file.Get(sparse_path), THnSparse) else False
-    else:
-        status = True
+    status = True if isinstance(merged_file.Get(sparse_path), THnSparse) else False
     return sublist, status
     
-def run_downloader(config, output_dir, log_lines):
+def file_downloader(output_dir, dirs, runs, suffix, num_merged, sparse_path, num_threads, force):
 
-    suffix = config["suffix"]
-    num_merged = config["num_merged"]
-    sparse_path = config.get("sparse_path", '')
-    threads = config["threads"]
-    force = config["force"]
-
-    print(f"Starting parallel downloads with {threads} threads...\n")
-    with ThreadPoolExecutor(max_workers=threads) as executor:
-        downloads = [executor.submit(download_file, file_path, run, f"{output_dir}/runs/") for file_path, run in zip(config['grid_dirs'], config['grid_runs'])]
-
-    for run in config['grid_runs']:
-        if not os.path.isfile(f"{output_dir}/runs/{run}/AnalysisResults.root"):
-            # log_lines.append(f"Checked {output_dir}/runs/{run}/AnalysisResults.root\n")
-            log_lines.append(f"[Run: {run}] AnalysisResults.root not found!\n")
+    print(f"Starting parallel downloads with {num_threads} threads...\n")
+    with ThreadPoolExecutor(max_workers=num_threads) as executor:
+        downloads = [executor.submit(download_file, line, run, output_dir) for (line, run) in zip(dirs, runs)]
 
     # Step 2: Find downloaded files
     find_command = f'find {output_dir}/runs -wholename "*/AnalysisResults.root" | tr "\\n" " "'
@@ -117,67 +60,90 @@ def run_downloader(config, output_dir, log_lines):
     total_files = len(output_list)
     files_per_merge = max(1, total_files // num_merged)
     sublists = [output_list[i:i + files_per_merge] for i in range(0, total_files, files_per_merge)]
+    print(f"Created sublists for merging: {sublists}")
 
     # Step 4: Parallel merging of files
-    if config["merge_all"]:
-        print(f"\nStarting parallel merging with {threads} threads...\n")
-        with ThreadPoolExecutor(max_workers=threads) as executor:
-            mergers = []
-            for i, sublist in enumerate(sublists):
-                merge_name = f"{output_dir}/MERGED_{i}_{suffix}.root"
-                mergers.append(executor.submit(merge_files, sublist, merge_name, sparse_path, force))
+    print(f"\nStarting parallel merging with {num_threads} threads...\n")
+    with ThreadPoolExecutor(max_workers=num_threads) as executor:
+        mergers = []
+        for i, sublist in enumerate(sublists):
+            merge_name = f"{output_dir}/MERGED_{i}_{suffix}.root"
+            mergers.append(executor.submit(merge_files, sublist, merge_name, sparse_path, force))
+        
+        for future in as_completed(mergers):
+            future.result()  # catch exceptions and confirm merge
             
-            for future in as_completed(mergers):
-                future.result()  # catch exceptions and confirm merge
-            
-        print(f"mergers: {mergers}")
-        for i, future in enumerate(mergers):
-            sublist, status = future.result()
-            if status:
-                log_lines.append(f"\nMerged {sublist} into {output_dir}/MERGED_{i}_{suffix}.root with status: {status}.")
-            else:
-                log_lines.append(f"\nError merging files into {output_dir}/MERGED_{i}_{suffix}.root. Trying to split runs")
-                subsublist = split_into_three(sublist)
-                for list in subsublist:
-                    merge_command = f"hadd -f {output_dir}/MERGED_{i+num_merged}_{suffix}.root {list}" if force else f"hadd {merge_name} {list}"
-                    print(f"\n[Merging] {merge_command}")
-                    os.system(merge_command)
-                num_merged += len(subsublist)
+    print(f"mergers: {mergers}")
+    summary_merge = []
+    for i, future in enumerate(mergers):
+        sublist, status = future.result()
+        if status:
+            print(f"\nMerged {sublist} into {output_dir}/MERGED_{i}_{suffix}.root with status: {status}.")
+            summary_merge.append(f"\nMerged {sublist} into {output_dir}/MERGED_{i}_{suffix}.root with status: {status}.")
+        else:
+            print(f"\nError merging files into {output_dir}/MERGED_{i}_{suffix}.root. Trying to split runs")
+            summary_merge.append(f"\nError merging files into {output_dir}/MERGED_{i}_{suffix}.root. Trying to split runs")
+            subsublist = split_into_three(sublist)
+            for list in subsublist:
+                merge_command = f"hadd -f {output_dir}/MERGED_{i+num_merged}_{suffix}.root {list}" if force else f"hadd {merge_name} {list}"
+                print(f"\n[Merging] {merge_command}")
+                os.system(merge_command)
+            num_merged += len(subsublist)
+    
+    # Step 5: Copy the runs.txt file
+    outfile_summary = f"{output_dir}/runs_{suffix}.txt"
+    summary_lines = []
+    for dir, run in zip(dirs, runs):
+        summary_lines.append(f"{dir} --- {run}")
+    with open(outfile_summary, 'w') as f:
+        f.writelines("\n".join(summary_lines))
+        f.writelines("\n".join(summary_merge))
+    print(f"\nDownload summary written to {output_dir}/runs_{suffix}.txt")
 
-        print(f"\n\n")
-        for future in as_completed(downloads):
-            _, input_file = future.result()  # just to catch any exceptions
-            if not input_file.is_file():
-                log_lines.append(f"    Error downloading file: {input_file} --> run merging needed!\n")
-
-    return log_lines
+    print(f"\n\n")
+    for future in as_completed(downloads):
+        _, input_file = future.result()  # just to catch any exceptions
+        if not input_file.is_file():
+            print(f"    Error downloading file: {input_file} --> run merging needed!")
 
 if __name__ == "__main__":
     # Set up argument parser
     parser = argparse.ArgumentParser(description="Download files from ALIEN and merge them using hadd.")
-    parser.add_argument("cfg", type=str, default="cfg.yml", help="Path to the input file list (default: runs.txt)")
+    parser.add_argument("--output_dir", "-o", type=str, required=False, default="path/to/output", help="Path to output directory")
+    parser.add_argument("--input_file_dirs", "-id", type=str, required=False, default="grid_dirs.txt", help="Path to the input file list (default: runs.txt)")
+    parser.add_argument("--input_file_runs", "-ir", type=str, required=False, default="grid_runs.txt", help="Path to the input file list (default: runs.txt)")
+    parser.add_argument("--train_no", "-tr", type=str, required=False, default="trainno", help="suffix (default: trainno)")
+    parser.add_argument("--suffix", "-s", type=str, required=False, default="suffix", help="suffix (default: trainno)")
+    parser.add_argument("--num_merged", "-n", type=int, required=False, default=1, help="Number of MERGED files to create")
+    parser.add_argument("--sparse_path", "-sp", type=str, required=False, default="hf-task-flow-charm-hadrons/hSparseFlowCharm", help="Path to the sparse to be checked when merging (default: runs.txt)")
+    parser.add_argument("--threads", "-t", type=int, required=False, default=4, help="Number of parallel download threads (default: 4)")
+    parser.add_argument("--force", "-f", action="store_true",  default=False, help="Overwrite existing merged files")
+    parser.add_argument("--config_file", "-cfg", type=str, required=False, default="", help="Path to the input file list (default: runs.txt)")
     args = parser.parse_args()
     
-    with open(args.cfg, 'r') as yml_file:
-        config = yaml.load(yml_file, yaml.FullLoader)
+    if args.config_file != "":
+        with open(args.config_file, 'r', encoding='utf8') as ymlfitConfigFile:
+                config = yaml.load(ymlfitConfigFile, yaml.FullLoader)
+                print("YAML file loaded!")
+        output_dir = config['output_dir']
+        suffix = config['suffix']
+        num_merged = config['num_merged']
+        sparse_path = config['sparse_path']
+        threads = config['threads']
+        force = config['force']
+        train_number = config['train_number']
+        dirs = config['grid_dirs']
+        runs = config['grid_runs']
+        output_dir = output_dir + "Train" + str(train_number) + "/"
+        file_downloader(output_dir, dirs, runs, suffix, num_merged, sparse_path, threads, force)
+    else:
+        output_dir = args.output_dir + "Train" + args.train_no + "/"
+        with open(grid_dirs, 'r') as file:
+            dirs = file.readlines()
+        with open(grid_runs, 'r') as file:
+            runs = file.readlines()
+        print(f"Output directory: {output_dir}")
+        os.makedirs(output_dir, exist_ok=True)
+        file_downloader(output_dir, dirs, runs, args.suffix, args.num_merged, args.sparse_path, args.threads, args.force)
 
-    output_dir = f"{config['output_dir']}/Train{config['train_number']}/"
-    print(f"Output directory: {output_dir}")
-    os.makedirs(output_dir, exist_ok=True)
-    # Step 5: Copy the runs.txt file
-    with open(f"{output_dir}/cfg.yml", 'w') as outfile:
-        yaml.dump(config, outfile, default_flow_style=False)
-    
-    log_lines = []
-    if config["download_merged_runs"]:
-        print(f"Loading merged runs ... ")
-        run_downloader(config, output_dir, log_lines)
-    if config["download_single_runs"]:
-        print(f"Loading single runs ... ")
-        load_single_runs(config, output_dir, log_lines)
 
-
-    with open(f"{output_dir}/log.txt", "w") as file:
-        file.writelines(log_lines)
-
-    print(f"Lines appended to {output_dir}/log.txt successfully!")

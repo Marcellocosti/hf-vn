@@ -35,16 +35,16 @@ def get_resolution(dets, det_lables, cent_min, cent_max):
             list of floats, max and min centrality bins
 
     Output:
-        - h_means:
+        - histo_means:
             list of TH1D, list of histograms with the mean value of the projections as a function of centrality for 1% bins
-        - h_means_deltacent:
+        - histo_means_deltacent:
             list of TH1D, list of histograms with the mean value of the projections as a function of centrality for CentMin-CentMax
-        - h_reso:
+        - histo_reso:
             TH1D, histogram with the resolution value as a function of centrality for 1% bins
-        - h_reso_delta_cent:
+        - histo_reso_delta_cent:
             TH1D, histogram with the resolution value as a function of centrality for CentMin-CentMax
     '''
-    h_means, h_means_deltacent, h_rms = [], [], []
+    histo_means, histo_means_deltacent, histo_rms = [], [], []
     delta_cent = cent_max - cent_min
 
     # collect the qvecs and prepare histo for mean and resolution
@@ -54,34 +54,34 @@ def get_resolution(dets, det_lables, cent_min, cent_max):
         hist_proj_allbins = det.ProjectionY(f'proj_{det.GetName()}_mean_deltacent',
                                             det.GetXaxis().FindBin(cent_min),
                                             det.GetXaxis().FindBin(cent_max)-1)
-        h_means_deltacent.append(TH1F('', '', 1, cent_min, cent_max))
-        h_means_deltacent[-1].SetName(f'proj_{det_label}_mean_deltacent')
-        h_means_deltacent[-1].SetBinContent(1, hist_proj_allbins.GetMean())
-        h_means_deltacent[-1].SetBinError(1, hist_proj_allbins.GetMeanError())
+        histo_means_deltacent.append(TH1F('', '', 1, cent_min, cent_max))
+        histo_means_deltacent[-1].SetName(f'proj_{det_label}_mean_deltacent')
+        histo_means_deltacent[-1].SetBinContent(1, hist_proj_allbins.GetMean())
+        histo_means_deltacent[-1].SetBinError(1, hist_proj_allbins.GetMeanError())
         del hist_proj_allbins
 
         # th1 for mean and rms in 1% centrality bins
-        h_means.append(TH1F(f'proj_{det_label}_mean', f'proj_{det_label}_mean', delta_cent, cent_min, cent_max))
-        h_rms.append(TH1F(f'proj_{det_label}_rms', f'proj_{det_label}_rms', delta_cent, cent_min, cent_max))
+        histo_means.append(TH1F(f'proj_{det_label}_mean', f'proj_{det_label}_mean', delta_cent, cent_min, cent_max))
+        histo_rms.append(TH1F(f'proj_{det_label}_rms', f'proj_{det_label}_rms', delta_cent, cent_min, cent_max))
         for icent, cent in enumerate(range(cent_min, cent_max)):
             bin_cent = det.GetXaxis().FindBin(cent) # common binning
-            h_proj = det.ProjectionY(f'proj_{det_label}_{cent}_{icent}', bin_cent, bin_cent)
-            h_means[-1].SetBinContent(icent+1, h_proj.GetMean())
-            h_rms[-1].SetBinContent(icent+1, h_proj.GetRMS())
+            histo_proj = det.ProjectionY(f'proj_{det_label}_{cent}_{icent}', bin_cent, bin_cent)
+            histo_means[-1].SetBinContent(icent+1, histo_proj.GetMean())
+            histo_rms[-1].SetBinContent(icent+1, histo_proj.GetRMS())
 
     # Compute resolution for 1% centrality bins
-    h_reso = TH1F('h_reso', 'h_reso', delta_cent, cent_min, cent_max)
+    histo_reso = TH1F('histo_reso', 'histo_reso', delta_cent, cent_min, cent_max)
     for icent in range(cent_min, cent_max):
-        reso = compute_resolution([h_means[i].GetBinContent(icent-cent_min+1) for i in range(len(dets))])
-        centbin = h_reso.GetXaxis().FindBin(icent)
-        h_reso.SetBinContent(centbin, reso)
+        reso = compute_resolution([histo_means[i].GetBinContent(icent-cent_min+1) for i in range(len(dets))])
+        centbin = histo_reso.GetXaxis().FindBin(icent)
+        histo_reso.SetBinContent(centbin, reso)
 
     # Compute resolution for CentMin-CentMax
-    h_reso_delta_cent = TH1F('h_reso_delta_cent', 'h_reso_delta_cent', 1, cent_min, cent_max)
-    res_deltacent = compute_resolution([h_means_deltacent[i].GetBinContent(1) for i in range(len(dets))])
-    h_reso_delta_cent.SetBinContent(1, res_deltacent)
+    histo_reso_delta_cent = TH1F('histo_reso_delta_cent', 'histo_reso_delta_cent', 1, cent_min, cent_max)
+    res_deltacent = compute_resolution([histo_means_deltacent[i].GetBinContent(1) for i in range(len(dets))])
+    histo_reso_delta_cent.SetBinContent(1, res_deltacent)
 
-    return h_means, h_means_deltacent, h_rms, h_reso, h_reso_delta_cent
+    return histo_means, histo_means_deltacent, histo_rms, histo_reso, histo_reso_delta_cent
 
 def compute_resolution(subMean):
     '''
@@ -117,6 +117,7 @@ def getListOfHistos(an_res_list):
     # generate triplets of pairs (AB, AC, BC)
     histos = {}
     for filepath in an_res_list:
+        print(f"Processing resolution file: {filepath}")
         infile = TFile(filepath, 'READ')
         dir = infile.GetDirectory('hf-task-flow-charm-hadrons/spReso')
         for hist in dir.GetListOfKeys():
@@ -129,7 +130,7 @@ def getListOfHistos(an_res_list):
 
     pairs = [name.replace('hSpReso', '') for name, _ in histos.items()]
     triplets = list(combinations(pairs, 3))
-    h_triplets = list(combinations(list(histos.values()), 3))
+    histo_triplets = list(combinations(list(histos.values()), 3))
 
     matched_triplets, matched_labels = [], []
     detsA = ['FT0c', 'FT0a', 'FV0a', 'TPCpos', 'FT0m', 'TPCneg']
@@ -140,7 +141,7 @@ def getListOfHistos(an_res_list):
             if (detA in triplet[0] and detA in triplet[1]) and \
                (detB in triplet[0] and detB in triplet[2]) and \
                (detC in triplet[1] and detC in triplet[2]):
-                    matched_triplets.append(h_triplets[i])
+                    matched_triplets.append(histo_triplets[i])
                     matched_labels.append((detA, detB, detC))
 
     return matched_triplets, matched_labels
@@ -165,7 +166,7 @@ def compute_reso(file_list, cent_classes, outfile):
     for icent, (cent_min, cent_max) in enumerate(zip(cent_classes[:-1], cent_classes[1:])):
         for i, (triplet, labels) in enumerate(zip(histos_triplets, histos_triplets_lables)):
 
-            histos_mean, histos_mean_deltacent, histos_rms, h_reso, h_reso_deltacent = get_resolution(triplet, labels, cent_min, cent_max)
+            histos_mean, histos_mean_deltacent, histos_rms, histo_reso, histo_reso_deltacent = get_resolution(triplet, labels, cent_min, cent_max)
             detA_label, detB_label, detC_label = labels[0], labels[1], labels[2]
             dir = f'cent_{cent_min}_{cent_max}/{detA_label}_{detB_label}_{detC_label}'
             outfile.mkdir(dir)
@@ -177,14 +178,14 @@ def compute_reso(file_list, cent_classes, outfile):
             leg.SetBorderSize(0)
             leg.SetFillStyle(0)
             leg.SetTextSize(0.03)
-            for i, (hist_det, hist_mean, hist_rms, h_mean_deltacent) in enumerate(zip(triplet,
+            for i, (hist_det, hist_mean, hist_rms, histo_mean_deltacent) in enumerate(zip(triplet,
                                                                                     histos_mean, histos_rms,
                                                                                     histos_mean_deltacent)):
                 SetObjectStyle(hist_mean, color=kRed, markerstyle=kFullCircle,
                             markersize=1, fillstyle=0, linewidth=2)
                 SetObjectStyle(hist_rms, color=kRed, markerstyle=kFullCircle,
                             markersize=1, fillstyle=0, linewidth=2)
-                SetObjectStyle(h_mean_deltacent, color=kBlue, markerstyle=kOpenCircle,
+                SetObjectStyle(histo_mean_deltacent, color=kBlue, markerstyle=kOpenCircle,
                             markersize=1, fillstyle=0, linestyle=2, linewidth=3)
                 canvas.cd(i+1)
                 canvas.cd(i+1).SetLogz()
@@ -195,11 +196,11 @@ def compute_reso(file_list, cent_classes, outfile):
                             xtitleoffset=1.1, xlabeloffset=0.020, ydivisions=406,
                             xmoreloglabels=True, ycentertitle=True, ymaxdigits=5)
                 hist_det.Draw('same colz')
-                h_mean_deltacent.Draw('same pl')
+                histo_mean_deltacent.Draw('same pl')
                 hist_mean.Draw('same pl')
                 if i == 0:
                     leg.AddEntry(hist_mean, 'Average 1% centrality', 'lp')
-                    leg.AddEntry(h_mean_deltacent,
+                    leg.AddEntry(histo_mean_deltacent,
                                 f'Average {cent_min-cent_max}% centrality', 'lp')
                     leg.Draw()
                     latex.DrawLatex(0.2, 0.85, f'A: {detA_label}, B: {detB_label}')
@@ -207,15 +208,15 @@ def compute_reso(file_list, cent_classes, outfile):
                     latex.DrawLatex(0.2, 0.85, f'A: {detA_label}, B: {detC_label}')
                 else:
                     latex.DrawLatex(0.2, 0.85, f'A: {detB_label}, B: {detC_label}')
-                h_mean_deltacent.Write()
+                histo_mean_deltacent.Write()
                 hist_mean.Write()
                 hist_rms.Write()
                 hist_det.Write()
             canvas.Update()
             canvas.Write()
-            h_reso.Write()
-            h_reso_deltacent.Write()
-            reso_all_cents[f"{detA_label}_{detB_label}_{detC_label}"].SetBinContent(icent+1, h_reso_deltacent.GetBinContent(1))
+            histo_reso.Write()
+            histo_reso_deltacent.Write()
+            reso_all_cents[f"{detA_label}_{detB_label}_{detC_label}"].SetBinContent(icent+1, histo_reso_deltacent.GetBinContent(1))
 
     outfile.cd()
     for reso_all_cent in reso_all_cents.values():
@@ -232,16 +233,16 @@ if __name__ == "__main__":
         config = yaml.load(yml_file, yaml.FullLoader)
 
     # Load the files run by run
-    os.system(f"python3 {work_dir}/../utils/load_long_train_run_by_run.py {args.cfg}")
+    os.system(f"python3 {work_dir}/../utils/load_long_train_run_by_run.py -cfg {args.cfg}")
 
-    # Compute the resolution run by run
+    # # Compute the resolution run by run
     file_output_dir = f"{config['output_dir']}/Train{config['train_number']}/"
     reso_output_dir = config["reso_output_dir"]
     os.makedirs(reso_output_dir, exist_ok=True)
     reso_files = []
     if config.get("grid_runs"):
         for run in config["grid_runs"]:
-            print(f"Processing run {run} ...")
+            print(f"Processing grid run {run} ...")
             input_file_path = f"{file_output_dir}/runs/{run}/AnalysisResults.root"
             os.makedirs(f"{reso_output_dir}/{run}", exist_ok=True)
             outfile = TFile(f'{reso_output_dir}/{run}/resosp{config["suffix"]}.root', 'RECREATE')
@@ -251,7 +252,7 @@ if __name__ == "__main__":
         
     if config.get("single_runs"):
         for run in config["single_runs"]:
-            print(f"Processing run {run['number']}")
+            print(f"Processing single run {run['number']}")
             input_file_path = f"{file_output_dir}/single_runs/{run['number']}/AnalysisResults.root"
             command = f'find {file_output_dir}/single_runs/{run["number"]} -wholename "*/AnalysisResults.root" | tr "\n" " "'
             print(f"command: {command}")

@@ -316,64 +316,6 @@ def compute_resolution(subMean):
         print('ERROR: dets must be a list of 2 or 3 subsystems')
         sys.exit(1)
 
-def get_centrality_bins(centrality):
-    '''
-    Get centrality bins
-
-    Input:
-        - centrality:
-            str, centrality class (e.g. 'k3050')
-
-    Output:
-        - cent_bins:
-            list of floats, centrality bins
-        - cent_label:
-            str, centrality label
-    '''
-    if centrality == 'k05':
-        return '0_5', [0, 5]
-    if centrality == 'k510':
-        return '5_10', [5, 10]
-    if centrality == 'k010':
-        return '0_10', [0, 10]
-    if centrality == 'k1015':
-        return '10_15', [10, 15]
-    if centrality == 'k1520':
-        return '15_20', [15, 20]
-    if centrality == 'k1020':
-        return '10_20', [10, 20]
-    if centrality == 'k020':
-        return '0_20', [0, 20]
-    if centrality == 'k2030':
-        return '20_30', [20, 30]
-    elif centrality == 'k3040':
-        return '30_40', [30, 40]
-    elif centrality == 'k3050':
-        return '30_50', [30, 50]
-    elif centrality == 'k4050':
-        return '40_50', [40, 50]
-    elif centrality == 'k2060':
-        return '20_60', [20, 60]
-    elif centrality == 'k4060':
-        return '40_60', [40, 60]
-    elif centrality == 'k4080':
-        return '40_80', [40, 80]
-    elif centrality == 'k5060':
-        return '50_60', [50, 60]
-    elif centrality == 'k5080':
-        return '50_80', [50, 80]
-    elif centrality == 'k6070':
-        return '60_70', [60, 70]
-    elif centrality == 'k6080':
-        return '60_80', [60, 80]
-    elif centrality == 'k7080':
-        return '70_80', [70, 80]
-    elif centrality == 'k0100':
-        return '0_100', [0, 100]
-    else:
-        print(f"ERROR: cent class \'{centrality}\' is not supported! Exit")
-    sys.exit()
-
 def compute_r2(reso_file, wagon_id, cent_min, cent_max, detA, detB, detC, vn_method):
     '''
     Compute resolution for SP or EP method
