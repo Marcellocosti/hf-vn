@@ -60,6 +60,8 @@ void SetInputHistoNames_v2(DhCorrelationExtraction* plotter, TString pathFileSE,
 
 void ExtractOutputCorrel(const TString cfgFileName = "config_CorrAnalysis.json")
 {
+  std::cout << "==========================" << std::endl;
+  std::cout << "D-h Correlation Extraction" << std::endl;
   // gStyle -> SetOptStat(0);
   gStyle->SetPadLeftMargin(0.15);
   gStyle->SetPadBottomMargin(0.15);
@@ -67,6 +69,8 @@ void ExtractOutputCorrel(const TString cfgFileName = "config_CorrAnalysis.json")
   gStyle->SetLineWidth(2);
   gStyle->SetCanvasDefH(1126);
   gStyle->SetCanvasDefW(1840);
+
+  std::cout << "Style set" << std::endl;
 
   // Load config
   FILE* configFile = fopen(cfgFileName.Data(), "r");
@@ -76,6 +80,8 @@ void ExtractOutputCorrel(const TString cfgFileName = "config_CorrAnalysis.json")
   config.ParseStream(is);
   fclose(configFile);
 
+  std::cout << "Config file loaded" << std::endl;
+
   string CodeNameAnalysis = config["CodeName"].GetString();
   gSystem->Exec(Form("rm -rf Output_CorrelationExtraction_%s_Root/ Output_CorrelationExtraction_%s_png/", CodeNameAnalysis.data(), CodeNameAnalysis.data()));
   gSystem->Exec(Form("mkdir Output_CorrelationExtraction_%s_Root/ Output_CorrelationExtraction_%s_png/", CodeNameAnalysis.data(), CodeNameAnalysis.data()));
@@ -83,29 +89,55 @@ void ExtractOutputCorrel(const TString cfgFileName = "config_CorrAnalysis.json")
   gSystem->Exec("rm -rf InvMass/");
   gSystem->Exec("mkdir InvMass/");
 
+  std::cout << "Output directories created" << std::endl;
+
   string pathFileSE = config["pathFileSE"].GetString();
+  std::cout << "pathFileSE: " << pathFileSE << std::endl;
   string pathFileME = config["pathFileME"].GetString();
+  std::cout << "pathFileME: " << pathFileME << std::endl;
   string pathFileMass = config["pathFileMass"].GetString();
+  std::cout << "pathFileMass: " << pathFileMass << std::endl;
   string pathFileFDTemplate = config["pathFileFDTemplate"].GetString();
+  std::cout << "pathFileFDTemplate: " << pathFileFDTemplate << std::endl;
   string pathFileFDPromptFrac = config["pathFileFDPromptFrac"].GetString();
+  std::cout << "pathFileFDPromptFrac: " << pathFileFDPromptFrac << std::endl;
   string pathFileSecPart = config["pathFileSecPart"].GetString();
+  std::cout << "pathFileSecPart: " << pathFileSecPart << std::endl;
   string pathfFilePromptMcRec = config["pathfFilePromptMcRec"].GetString();
+  std::cout << "pathfFilePromptMcRec: " << pathfFilePromptMcRec << std::endl;
   string pathfFileNonPromptMcRec = config["pathfFileNonPromptMcRec"].GetString();
+  std::cout << "pathfFileNonPromptMcRec: " << pathfFileNonPromptMcRec << std::endl;
 
   string dirSE = config["InputDirSE"].GetString();
+  std::cout << "dirSE: " << dirSE << std::endl;
   string dirME = config["InputDirME"].GetString();
+  std::cout << "dirME: " << dirME << std::endl;
   string dirSecPart = config["InputDirSecPart"].GetString();
+  std::cout << "dirSecPart: " << dirSecPart << std::endl;
   string histoNameCorrSE = config["InputHistoCorrSE"].GetString();
+  std::cout << "histoNameCorrSE: " << histoNameCorrSE << std::endl;
   string histoNameCorrME = config["InputHistoCorrME"].GetString();
+  std::cout << "histoNameCorrME: " << histoNameCorrME << std::endl;
   string histoNameCorrSignal = config["InputHistoCorrSignalName"].GetString();
+  std::cout << "histoNameCorrSignal: " << histoNameCorrSignal << std::endl;
   string histoNameCorrSideba = config["InputHistoCorrSidebaName"].GetString();
+  std::cout << "histoNameCorrSideba: " << histoNameCorrSideba << std::endl;
   string histoNameCorrSidebaLeft = config["InputHistoCorrSidebaLeftName"].GetString();
+  std::cout << "histoNameCorrSidebaLeft: " << histoNameCorrSidebaLeft << std::endl;
   string histoNameCorrSidebaRight = config["InputHistoCorrSidebaRightName"].GetString();
+  std::cout << "histoNameCorrSidebaRight: " << histoNameCorrSidebaRight << std::endl;
   string histoNameFDTemplatePrompt = config["InputHistoFDTemplatePrompt"].GetString();
+  std::cout << "histoNameFDTemplatePrompt: " << histoNameFDTemplatePrompt << std::endl;
   string histoNameFDTemplateNonPrompt = config["InputHistoFDTemplateNonPrompt"].GetString();
+  std::cout << "histoNameFDTemplateNonPrompt: " << histoNameFDTemplateNonPrompt << std::endl;
   string histoNameRawFracPrompt = config["InputHistoFDPromptFrac"].GetString();
+  std::cout << "histoNameRawFracPrompt: " << histoNameRawFracPrompt << std::endl;
   string histoNamePrimaryPart = config["InputHistoPrimaryPart"].GetString();
+  std::cout << "histoNamePrimaryPart: " << histoNamePrimaryPart << std::endl;
   string histoNameAllPart = config["InputHistoAllPart"].GetString();
+  std::cout << "histoNameAllPart: " << histoNameAllPart << std::endl;
+
+  std::cout << "Input paths and histogram names retrieved from config" << std::endl;
 
   std::vector<std::string> InputHistoMassName;
 
@@ -171,14 +203,22 @@ void ExtractOutputCorrel(const TString cfgFileName = "config_CorrAnalysis.json")
   const int nBinsPtCand = binsPtCandIntervals.size() - 1;
   const int nBinsPtHad = binsPtHadIntervals.size() - 1;
 
+  std::vector<std::vector<std::vector<TH2D*>>> hCorrel_SE(nBinsPtCand, std::vector<std::vector<TH2D*>>(nBinsPtHad, std::vector<TH2D*>(nBinsInvMass, nullptr)));
+  std::vector<std::vector<std::vector<TH2D*>>> hCorrel_ME(nBinsPtCand, std::vector<std::vector<TH2D*>>(nBinsPtHad, std::vector<TH2D*>(nBinsInvMass, nullptr)));
+  std::vector<std::vector<std::vector<TH2D*>>> hCorrectedCorrel_2D(nBinsPtCand, std::vector<std::vector<TH2D*>>(nBinsPtHad, std::vector<TH2D*>(nBinsInvMass, nullptr)));
+  std::vector<std::vector<std::vector<TH1D*>>> hCorrectedCorrel(nBinsPtCand, std::vector<std::vector<TH1D*>>(nBinsPtHad, std::vector<TH1D*>(nBinsInvMass, nullptr)));
+  std::vector<std::vector<std::vector<TH1D*>>> hCorrectedCorrel_BaselineSubtr(nBinsPtCand, std::vector<std::vector<TH1D*>>(nBinsPtHad, std::vector<TH1D*>(nBinsInvMass, nullptr)));
+  std::vector<std::vector<std::vector<TH1D*>>> hCorrectedCorrel_Reflected(nBinsPtCand, std::vector<std::vector<TH1D*>>(nBinsPtHad, std::vector<TH1D*>(nBinsInvMass, nullptr)));
+  std::vector<std::vector<std::vector<TH1D*>>> hCorrectedCorrel_Reflected_BaselineSubtr(nBinsPtCand, std::vector<std::vector<TH1D*>>(nBinsPtHad, std::vector<TH1D*>(nBinsInvMass, nullptr)));
+
   TH2F* hMassVsPt;
-  TH2D* hCorrel_SE[nBinsPtCand][nBinsPtHad][nBinsInvMass];
-  TH2D* hCorrel_ME[nBinsPtCand][nBinsPtHad][nBinsInvMass];
-  TH2D* hCorrectedCorrel_2D[nBinsPtCand][nBinsPtHad][nBinsInvMass];
-  TH1D* hCorrectedCorrel[nBinsPtCand][nBinsPtHad][nBinsInvMass];
-  TH1D* hCorrectedCorrel_BaselineSubtr[nBinsPtCand][nBinsPtHad][nBinsInvMass];
-  TH1D* hCorrectedCorrel_Reflected[nBinsPtCand][nBinsPtHad][nBinsInvMass];
-  TH1D* hCorrectedCorrel_Reflected_BaselineSubtr[nBinsPtCand][nBinsPtHad][nBinsInvMass];
+  // TH2D* hCorrel_SE[nBinsPtCand][nBinsPtHad][nBinsInvMass];
+  // TH2D* hCorrel_ME[nBinsPtCand][nBinsPtHad][nBinsInvMass];
+  // TH2D* hCorrectedCorrel_2D[nBinsPtCand][nBinsPtHad][nBinsInvMass];
+  // TH1D* hCorrectedCorrel[nBinsPtCand][nBinsPtHad][nBinsInvMass];
+  // TH1D* hCorrectedCorrel_BaselineSubtr[nBinsPtCand][nBinsPtHad][nBinsInvMass];
+  // TH1D* hCorrectedCorrel_Reflected[nBinsPtCand][nBinsPtHad][nBinsInvMass];
+  // TH1D* hCorrectedCorrel_Reflected_BaselineSubtr[nBinsPtCand][nBinsPtHad][nBinsInvMass];
 
   // Create and set the correlation plotter class
   DhCorrelationExtraction* plotter = new DhCorrelationExtraction();

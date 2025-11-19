@@ -137,7 +137,6 @@ class DhCorrelationExtraction : public TObject
   TH2D* GetFDTemplateHisto(Int_t PromptOrFD, Double_t PtCandMin, Double_t PtCandMax, Double_t PtHadMin, Double_t PtHadMax);
   TH1D* GetCorrelHistoSecondaryPart(Int_t PrimaryPart, Double_t PtCandMin, Double_t PtCandMax, Double_t PtHadMin, Double_t PtHadMax);
   TH1D* ReflectCorrHistogram(TH1D*& histo);
-  TH1D* ReflectHistoRun2(TH1D* h, Double_t scale);
   TH1D* EvaluateMCClosModulations(Double_t PtCandMin, Double_t PtCandMax, Double_t PtHadMin, Double_t PtHadMax);
   Double_t GetFDPromptFrac(Double_t PtCandMin, Double_t PtCandMax, Double_t PtHadMin, Double_t PtHadMax);
   Double_t CalculateBaseline(TH1D*& histo, Bool_t totalRange = kTRUE, Bool_t reflected = kFALSE);

@@ -20,65 +20,6 @@ import glob
 import re
 import shutil
 
-def get_vn_versus_mass(thnSparses, inv_mass_bins, mass_axis, vn_axis, debug=False):
-    '''
-    Project vn versus mass
-
-    Input:
-        - thnSparse:
-            THnSparse, input THnSparse obeject (already projected in centrality and pt)
-        - inv_mass_bins:
-            list of floats, bin edges for the mass axis
-        - mass_axis:
-            int, axis number for mass
-        - vn_axis:
-            int, axis number for vn
-        - debug:
-            bool, if True, create a debug file with the projections (default: False)
-
-    Output:
-        - hist_mass_proj:
-            TH1D, histogram with vn as a function of mass
-    '''
-    if not isinstance(thnSparses, list):
-        thnSparses = [thnSparses]
-        
-    for iThn, thnSparse in enumerate(thnSparses):
-        hist_vn_proj_temp = thnSparse.Projection(vn_axis, mass_axis)
-        hist_vn_proj_temp.SetName(f'hist_vn_proj_{iThn}')
-        hist_vn_proj_temp.SetDirectory(0)
-        
-        if iThn == 0:
-            hist_vn_proj = hist_vn_proj_temp.Clone('hist_vn_proj')
-            hist_vn_proj.SetDirectory(0)
-            hist_vn_proj.Reset()
-            
-        hist_vn_proj.Add(hist_vn_proj_temp)
-
-    hist_mass_proj = thnSparse.Projection(mass_axis)
-    hist_mass_proj.Reset()
-    invmass_bins = np.array(inv_mass_bins)
-    hist_mass_proj = ROOT.TH1D('hist_mass_proj', 'hist_mass_proj', len(invmass_bins)-1, invmass_bins)
-
-    if debug:
-        outfile = ROOT.TFile('debug.root', 'RECREATE')
-
-    for i in range(hist_mass_proj.GetNbinsX()):
-        bin_low = hist_vn_proj.GetXaxis().FindBin(invmass_bins[i])
-        bin_high = hist_vn_proj.GetXaxis().FindBin(invmass_bins[i+1])
-        profile = hist_vn_proj.ProfileY(f'profile_{bin_low}_{bin_high}', bin_low, bin_high)
-        mean_sp = profile.GetMean()
-        mean_sp_err = profile.GetMeanError()
-        hist_mass_proj.SetBinContent(i+1, mean_sp)
-        hist_mass_proj.SetBinError(i+1, mean_sp_err)
-
-    if debug:
-        hist_vn_proj.Write()
-        hist_mass_proj.Write()
-        outfile.Close()
-
-    return hist_mass_proj
-
 def get_occupancy(thnSparses, occupancy_axis, debug=False):
     '''
     Project occupancy versus mass

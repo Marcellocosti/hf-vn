@@ -672,15 +672,6 @@ Bool_t DhCorrelationExtraction::ExtractCorrelations(Double_t PtCandMin, Double_t
     h1D_ReflCorr = ReflectCorrHistogram(h1D_SubtrNorm);
   }
 
-  /* used as control using Run2 reflection function
-  if (fFDsubtraction) {
-    h1D_ReflCorr = ReflectHistoRun2(h1D_SubtrFDNorm, 0.5);
-  } else if (fSecPartContamination) {
-    h1D_ReflCorr = ReflectHistoRun2(h1D_SubtrNorm_SecPart, 0.5);
-  } else {
-    h1D_ReflCorr = ReflectHistoRun2(h1D_SubtrNorm, 0.5);
-  }*/
-
   TCanvas* cFinal_Reflected = new TCanvas(Form("cFinal_Reflected_%.0fto%.0f", PtHadMin, PtHadMax), Form("cFinal_Reflected_%s_IntPools_PtAssoc%.0fto%.0f", fDmesonLabel.Data(), PtHadMin, PtHadMax), 100, 100, 1200, 700);
   cFinal_Reflected->cd();
   SetTH1HistoStyle(h1D_ReflCorr, Form("%.0f < p_{T} < %.0f GeV/c", PtCandMin, PtCandMax), "#Delta#phi [rad]", "#frac{1}{N_{D}}#frac{dN^{assoc}}{d#Delta#phi} [rad^{-1}]", kFullCircle, kOrange + 8, 1.6, kOrange + 8, 3);
@@ -1159,35 +1150,6 @@ TH1D* DhCorrelationExtraction::ReflectCorrHistogram(TH1D*& histo)
   }
 
   return h1D;
-}
-
-TH1D* DhCorrelationExtraction::ReflectHistoRun2(TH1D* h, Double_t scale)
-{
-
-  TH1D* h2 = new TH1D(Form("%sReflected", h->GetName()), Form("%sReflected", h->GetName()), h->GetNbinsX() / 2., 0., TMath::Pi());
-  for (Int_t j = 1; j <= h->GetNbinsX(); j++) {
-    Double_t x = h->GetBinCenter(j);
-    Double_t y0 = h->GetBinContent(j);
-    Double_t ey0 = h->GetBinError(j);
-    Int_t j2;
-    if (x > 0 && x < TMath::Pi()) {
-      j2 = h2->FindBin(x);
-    } else if (x < 0) {
-      j2 = h2->FindBin(-1. * x);
-    } else if (x > TMath::Pi()) {
-      j2 = h2->FindBin(2. * TMath::Pi() - x);
-    } else {
-      printf("Point %d excluded \n", j);
-      continue;
-    }
-    Double_t y = h2->GetBinContent(j2);
-    Double_t ey = h2->GetBinError(j2);
-    h2->SetBinContent(j2, (y + y0));
-    h2->SetBinError(j2, TMath::Sqrt(ey0 * ey0 + ey * ey));
-  }
-  h2->Scale(scale);
-
-  return h2;
 }
 
 Double_t DhCorrelationExtraction::GetFDPromptFrac(Double_t PtCandMin, Double_t PtCandMax, Double_t PtHadMin, Double_t PtHadMax)

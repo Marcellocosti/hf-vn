@@ -20,10 +20,11 @@ script_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(f"{script_dir}/")
 sys.path.append(f"{script_dir}/../utils/")
 from utils import get_centrality_bins, make_dir_root_file, logger
-from sparse_dicts import get_sparses
+from sparse_dicts import get_sparses_data, get_sparses_mc
 
 def check_existing_outputs(ptmin, ptmax, outputDir, stage):
-    outFilePath = f'{outputDir}/preprocess/AnalysisResults_pt_{int(ptmin*10)}_{int(ptmax*10)}.root'
+    pt_str = f'pt_{int(ptmin*10)}_{int(ptmax*10)}'
+    outFilePath = f'{outputDir}/preprocess/AnalysisResults_{pt_str}.root'
     if os.path.exists(outFilePath):
         logger(f"    [{stage}] Updating file: {outFilePath}")
         outFile = TFile(outFilePath, 'update')
@@ -35,71 +36,54 @@ def check_existing_outputs(ptmin, ptmax, outputDir, stage):
 
     return outFile, write_opt
 
-def write_pt_bin_reso(ptmin, ptmax, outputDir, resolutions, data_sparses):
-    # outFilePath = f'{outputDir}/preprocess/AnalysisResults_pt_{int(ptmin*10)}_{int(ptmax*10)}.root'
-    # if os.path.exists(outFilePath):
-    #     print(f"    [Reso] Updating file: {outFilePath}")
-    #     outFile = TFile(outFilePath, 'update')
-    #     write_opt = TObject.kOverwrite
-    # else:
-    #     print(f"    [Reso] Creating file: {outFilePath}")
-    #     outFile = TFile.Open(outFilePath, 'recreate')
-    #     write_opt = 0 # Standard
-
-    outFile, write_opt = check_existing_outputs(ptmin, ptmax, outputDir, "Reso")
-
-    for key, _ in data_sparses.items():
-        make_dir_root_file(f'Data_{key}', outFile)
-        outFile.cd(f'Data_{key}')
-        resolutions[f"Reso_{key}"].Write('hResolution', write_opt)
-
-    outFile.Close()
-    logger(f'[Reso] Finished processing pT bin {ptmin} - {ptmax}\n\n')
-
-def process_pt_bin_data(config, ptmin, ptmax, centmin, centmax, bkg_max_cut, debugPreprocessFile, outputDir, data_sparses, sparse_axes):
-    logger(f'[Data] Processing pT bin {ptmin} - {ptmax}, cent {centmin}-{centmax}')
+def process_pt_bin_data(cfg, ptmin, ptmax, bkg_max_cut, debugPreprocessFile, outputDir, sparses, axes, resolution):
+    logger(f'[Data] Processing pT bin {ptmin} - {ptmax}')
     
     # Force recreate of the output file when data are reprocessed, other operations are lightweight
-    outFilePath = f'{outputDir}/preprocess/AnalysisResults_pt_{int(ptmin*10)}_{int(ptmax*10)}.root'
+    pt_str = f'pt_{int(ptmin*10)}_{int(ptmax*10)}'
+    outFilePath = f'{outputDir}/preprocess/AnalysisResults_{pt_str}.root'
     logger(f"\t\t[Data] Creating file: {outFilePath}")
     outFile = TFile.Open(outFilePath, 'recreate')
 
-    axes_data = config['preprocess']["axes_data"]['axis_names']
-    rebin_data = config['preprocess']["axes_data"]['rebin_factors']
-    
-    for key, dataset_sparses in data_sparses.items():
-        logger(f'\t\t[Data] Processing dataset: {key}')
-        with alive_bar(len(dataset_sparses), title=f'[INFO] \t\t[Data] Processing {key}', bar='smooth') as bar:
-            for iSparse, sparse in enumerate(dataset_sparses):
-                sparse.GetAxis(sparse_axes['Pt']).SetRangeUser(ptmin, ptmax)
-                sparse.GetAxis(sparse_axes['ScoreBkg']).SetRangeUser(0, bkg_max_cut)
-                proj_axes = [sparse_axes[axtokeep] for axtokeep in axes_data]
-                proj_sparse = sparse.Projection(len(proj_axes), array.array('i', proj_axes), 'O')
-                proj_sparse.SetName(sparse.GetName())
-                proj_sparse = proj_sparse.Rebin(array.array('i', rebin_data))
-                if iSparse == 0:
-                    merged_sparse_pt = proj_sparse.Clone()
-                    proj_sparse.Delete()  # Delete the original projection to save memory
-                    del proj_sparse
-                    gc.collect()
-                    make_dir_root_file(f'pt_{int(ptmin*10)}_{int(ptmax*10)}/{key}', debugPreprocessFile)
-                    logger(f'\t[Data] Writing sparse for {key} with {merged_sparse_pt.GetNdimensions()} dimensions')
-                    debugPreprocessFile.cd(f'pt_{int(ptmin*10)}_{int(ptmax*10)}/{key}')
-                    for iDim in range(merged_sparse_pt.GetNdimensions()):
-                        merged_sparse_pt.Projection(iDim).Write(axes_data[iDim], TObject.kOverwrite)
-                else:
-                    merged_sparse_pt.Add(proj_sparse)
-                    proj_sparse.Delete()  # Delete the original projection to save memory
-                    del proj_sparse
-                    gc.collect()
-                print(f"\t\t[Data] After adding sparse {iSparse}, merged_sparse_pt.GetEntries() = {merged_sparse_pt.GetEntries()}", flush=True)
-                bar()
-        make_dir_root_file(f'Data_{key}', outFile)
-        logger(f'\t[Data] Writing sparse for {key} with {merged_sparse_pt.GetNdimensions()} dimensions')
-        outFile.cd(f'Data_{key}')
-        merged_sparse_pt.Write('hSparseFlowCharm', TObject.kOverwrite)
+    axes_to_keep = cfg["axes"]['names']
+    rebin = cfg["axes"]['rebin']
+
+    sparse_type, sparse_path = cfg['name'], cfg['path']
+    with alive_bar(len(sparses), title=f'[INFO] \t\t[Data] Processing {sparse_type}, {sparse_path}', bar='smooth') as bar:
+        logger(f'\t\t[Data] Processing dataset: {sparse_type}')
+        for iSparse, sparse in enumerate(sparses):
+            sparse.GetAxis(axes.get('PtTrig', axes['Pt'])).SetRangeUser(ptmin, ptmax) # PtTrig for correlations, Pt for SP flow
+            sparse.GetAxis(axes['score_bkg']).SetRangeUser(0, bkg_max_cut)
+            proj_axes = [axes[axtokeep] for axtokeep in axes_to_keep]
+            proj_sparse = sparse.Projection(len(proj_axes), array.array('i', proj_axes), 'O')
+            proj_sparse.SetName(sparse.GetName())
+            proj_sparse = proj_sparse.Rebin(array.array('i', rebin))
+            if iSparse == 0:
+                merged_sparse_pt = proj_sparse.Clone()
+                proj_sparse.Delete()  # Delete the original projection to save memory
+                del proj_sparse
+                gc.collect()
+                make_dir_root_file(f'{pt_str}/{sparse_path}', debugPreprocessFile)
+                logger(f'\t[Data] Writing sparse for {sparse_path} with {merged_sparse_pt.GetNdimensions()} dimensions')
+                debugPreprocessFile.cd(f'{pt_str}/{sparse_path}')
+                for iDim in range(merged_sparse_pt.GetNdimensions()):
+                    merged_sparse_pt.Projection(iDim).Write(axes_to_keep[iDim], TObject.kOverwrite)
+            else:
+                merged_sparse_pt.Add(proj_sparse)
+                proj_sparse.Delete()  # Delete the original projection to save memory
+                del proj_sparse
+                gc.collect()
+            print(f"\t\t[Data] After adding sparse {iSparse}, merged_sparse_pt.GetEntries() = {merged_sparse_pt.GetEntries()}", flush=True)
+            bar()
+        sparse_dir, sparse_name = sparse_path.split('/')[0], sparse_path.split('/')[1]
+        make_dir_root_file(f'Data_{sparse_type}/{sparse_dir}', outFile)
+        logger(f'\t[Data] Writing sparse for {sparse_name} with {merged_sparse_pt.GetNdimensions()} dimensions')
+        outFile.cd(f'Data_{sparse_type}/{sparse_dir}')
+        merged_sparse_pt.Write(sparse_name, TObject.kOverwrite)
         merged_sparse_pt.Delete()
         del merged_sparse_pt
+        if resolution is not None:
+            resolution.Write()
         gc.collect()
 
     outFile.Close()
@@ -179,20 +163,30 @@ def process_pt_bin_mc(config, ptmin, ptmax, centmin, centmax, bkg_max_cut, debug
     outFile.Close()
     logger(f'[MC] Finished processing pT bin {ptmin} - {ptmax}\n\n')
 
-def pre_process_data_mc(config):
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Arguments")
+    parser.add_argument('config_pre', metavar='text', 
+                        default='config_pre.yml', help='configuration file')
+    args = parser.parse_args()
 
-    # Load the configuration
-    ptmins = config['ptbins'][:-1]
-    ptmaxs = config['ptbins'][1:] 
-    centmin, centmax = get_centrality_bins(config['centrality'])[1]
+    logger(f'Using configuration file: {args.config_pre}')
+    with open(args.config_pre, 'r') as cfgPre:
+        full_cfg = yaml.safe_load(cfgPre)
 
-    # Load the ThnSparse
-    data_sparses, reco_sparses, gen_sparses, sparse_axes, resolutions = get_sparses(config, config["operations"]["preprocess_data"], 
-                                                                                    config["operations"]["preprocess_mc"], True)
-    if config.get("outdirPrep") and config["outdirPrep"] != "":
-        outputDir = config['outdirPrep']
+    # Load the full_cfguration
+    ptmins = full_cfg['ptbins'][:-1]
+    ptmaxs = full_cfg['ptbins'][1:] 
+
+    cfg_op = full_cfg['operations']
+
+    if full_cfg['preprocess']['data_type'] == 'SP':
+        # For Correlations, centrality cut is applied in O2Physics
+        centmin, centmax = get_centrality_bins(full_cfg['centrality'])[1]
+
+    if full_cfg.get("outdirPrep") and full_cfg["outdirPrep"] != "":
+        outputDir = full_cfg['outdirPrep']
     else:
-        outputDir = config['outdir']
+        outputDir = full_cfg['outdir']
     os.makedirs(f'{outputDir}/preprocess', exist_ok=True)
     if os.path.exists(f'{outputDir}/preprocess/DebugPreprocess.root'):
         logger(f'File {outputDir}/preprocess/DebugPreprocess.root already exists, updating it.')
@@ -201,25 +195,35 @@ def pre_process_data_mc(config):
         logger(f'Creating file {outputDir}/preprocess/DebugPreprocess.root')
         debugPreprocessFile = TFile(f'{outputDir}/preprocess/DebugPreprocess.root', 'recreate')
 
-    bkg_maxs = config['preprocess']['bkg_cuts']
-    max_workers = config['preprocess']['workers'] # hyperparameter
-    if config["operations"]["preprocess_data"] and config['preprocess'].get('data'):
-        logger("##### Skimming Data #####")
-        ### Centrally cut on centrality and max of bkg scores
-        for key, dataset_sparses in data_sparses.items():
-            for sparse in dataset_sparses:
-                sparse.GetAxis(sparse_axes['Flow']['Cent']).SetRangeUser(centmin, centmax)
-                sparse.GetAxis(sparse_axes['Flow']['ScoreBkg']).SetRangeUser(0, max(bkg_maxs))
-        with concurrent.futures.ThreadPoolExecutor(max_workers) as executor:
-            tasks_data = [executor.submit(process_pt_bin_data, config, ptmin, ptmax, centmin, centmax, bkg_maxs[iPt], 
-                                                               debugPreprocessFile, outputDir, data_sparses, sparse_axes['Flow']) for iPt, (ptmin, ptmax) in enumerate(zip(ptmins, ptmaxs))]
-        logger("Finished processing data")
-        with concurrent.futures.ThreadPoolExecutor(max_workers) as executor:
-            tasks_reso = [executor.submit(write_pt_bin_reso, ptmin, ptmax, outputDir, resolutions, data_sparses) for ptmin, ptmax in zip(ptmins, ptmaxs)]
-        logger("Finished processing resolutions")
+    bkg_maxs = full_cfg['preprocess']['bkg_cuts']
+    max_workers = full_cfg['preprocess']['workers'] # hyperparameter
 
-    if config["operations"].get("preprocess_mc") and config['preprocess'].get('mc'):
+    if cfg_op["preprocess_data"]:
+        logger("##### Skimming Data #####")
+        file_paths = full_cfg['preprocess']['inputs_data'] if full_cfg['preprocess'].get('inputs_data') \
+                     else [f for f in os.listdir(full_cfg['preprocess']["inputs_data_dir"]) if f.endswith(".root")]
+        files = [TFile.Open(f, 'r') for f in file_paths]
+        for sparse_cfg in full_cfg['preprocess']['sparses_data']:
+            data_sparses, sparse_axes, resolution = get_sparses_data(files, full_cfg, sparse_cfg, True)
+            ### Centrally cut on centrality and max of bkg scores
+            print(f"data_sparses: {data_sparses}")
+            for sparse in data_sparses:
+                logger(f"Applying bkg cut to sparse {sparse} with value {max(bkg_maxs)}", "INFO")
+                sparse.GetAxis(sparse_axes['score_bkg']).SetRangeUser(0, max(bkg_maxs))
+                if 'Correl' not in sparse_cfg['name']:  # Only for flow with SP, not for correlations (applied in O2Physics)
+                    logger(f"Applying cent cut to sparse {sparse} with value {centmin} -- {centmax}", "INFO")
+                    sparse.GetAxis(sparse_axes['cent']).SetRangeUser(centmin, centmax)
+                else:
+                    logger(f"Skipping cent cut for correlations sparse {sparse}", "INFO")
+            with concurrent.futures.ThreadPoolExecutor(max_workers) as executor:
+                tasks_data = [executor.submit(process_pt_bin_data, sparse_cfg, ptmin, ptmax, bkg_maxs[iPt], debugPreprocessFile, outputDir,
+                                                                   data_sparses, sparse_axes, resolution) for iPt, (ptmin, ptmax) in enumerate(zip(ptmins, ptmaxs))]
+        [file.Close() for file in files]
+        logger("Finished processing data")
+
+    if cfg_op.get("preprocess_mc") and config['preprocess'].get('mc'):
         logger("##### Skimming Monte Carlo #####")
+        reco_sparses, gen_sparses, sparse_axes = get_sparses_mc(config, data_type, cfg_op.get("preprocess_mc", False), True)
         ### Centrally cut on centrality and max of bkg scores
         for key, sparse_type in reco_sparses.items():
             [sparse.GetAxis(sparse_axes[key]['Cent']).SetRangeUser(centmin, centmax) for sparse in sparse_type]
@@ -231,18 +235,6 @@ def pre_process_data_mc(config):
                                                            debugPreprocessFile, outputDir, reco_sparses, gen_sparses, sparse_axes) for iPt, (ptmin, ptmax) in enumerate(zip(ptmins, ptmaxs))]
         logger("Finished processing MC")
 
-    if not config["operations"]["preprocess_data"] and not config["operations"]["preprocess_mc"]:
+    if not cfg_op["preprocess_data"] and not cfg_op["preprocess_mc"]:
         logger("No data or mc pre-processing enabled. Exiting.", level='ERROR')
     debugPreprocessFile.Close()
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Arguments")
-    parser.add_argument('config_pre', metavar='text', 
-                        default='config_pre.yml', help='configuration file')
-    args = parser.parse_args()
-
-    logger(f'Using configuration file: {args.config_pre}')
-    with open(args.config_pre, 'r') as cfgPre:
-        config = yaml.safe_load(cfgPre)
-
-    pre_process_data_mc(config)

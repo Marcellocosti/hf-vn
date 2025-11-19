@@ -5,21 +5,10 @@ from ROOT import TFile # pyright: ignore # type: ignore
 sys.path.append("./")
 from utils import logger, get_centrality_bins
 
-def get_sparses_dicts(config, beforeDMesonPR = False):
+def get_sparses_dicts_mc(sparse_name, dmeson, beforeDMesonPR = False):
     
     axes_dict = {}
-    ### Data sparse dictionary
-    axes_dict['Flow'] = {
-        'Mass': 0,
-        'Pt': 1,
-        'Cent': 2,
-        'Sp': 3,
-        'ScoreBkg': 4,
-        'ScoreFD': 5,
-        'Occ': 6
-    }
-    ### MC sparse dictionary
-    if config['Dmeson'] == 'Dzero':
+    if dmeson == 'Dzero':
         axes_dict['RecoPrompt'] = {
             'ScoreBkg': 0,
             'score_prompt': 1,
@@ -56,7 +45,7 @@ def get_sparses_dicts(config, beforeDMesonPR = False):
             'Cent': 5,
             'Occ': 6
         }
-    elif config['Dmeson'] == 'Dplus':
+    elif dmeson == 'Dplus':
         axes_dict['RecoPrompt'] = {
             'Mass': 0,
             'Pt': 1,
@@ -90,8 +79,7 @@ def get_sparses_dicts(config, beforeDMesonPR = False):
             'PtBMoth': 3,
             'FlagBHad': 4,
         }
-
-    elif config['Dmeson'] == 'Ds':
+    elif dmeson == 'Ds':
         axes_dict['RecoPrompt'] = {
             'Mass': 0,
             'Pt': 1,
@@ -128,15 +116,58 @@ def get_sparses_dicts(config, beforeDMesonPR = False):
             'FlagBHad': 4,
             'Occ': 5
         }
+    else:
+        logger(f"Data type {data_type} not recognized", level='ERROR')
 
     return axes_dict
+
+def get_sparses_dicts_data(sparse_name):
+
+    print(f"Getting sparse dict for {sparse_name}")
+    print(f"sparse_name: {sparse_name} vs CorrelMaps")
+    if sparse_name == "CorrelMaps":
+        return {
+                'PoolBin': 0,
+                'PtTrig': 1,
+                'PtAssoc': 2,
+                'DeltaEta': 3,
+                'DeltaPhi': 4,
+                'Mass': 5,
+                'score_bkg': 6,
+                'score_FD': 7
+                }
+    elif sparse_name == "CorrelTrig":
+        return {
+                'Mass': 0,
+                'PtTrig': 1,
+                'score_bkg': 2,
+                'score_FD': 3
+                }
+    elif sparse_name == "FlowSP":
+        return {
+                'Mass': 0,
+                'Pt': 1,
+                'cent': 2,
+                'sp': 3,
+                'score_bkg': 4,
+                'score_FD': 5,
+                'occ': 6
+                }
+    else:
+        logger(f"Sparse type {sparse_name} not recognized", level='ERROR')
 
 def get_pt_preprocessed_sparses(config, iPt):
     
     logger("Loading preprocessed sparses", level='INFO')
     sparsesFlow, sparsesReco, sparsesGen, axes_dict, resolutions = {}, {}, {}, {}, {}
     pre_cfg = config['preprocess']
-    axes_dict['Flow'] = {ax: iax for iax, ax in enumerate(pre_cfg['axes_data'].keys())}
+    
+    # Find preprocess config of sparse with name "FlowSP" (this is the one to be projected)
+    for sparse_cfg in pre_cfg['sparses_data']:
+        if sparse_cfg['name'] == 'FlowSP':
+            sparse_proj_cfg = sparse_cfg
+            break
+    print(f"\n\naxes_dict: {axes_dict}")
     ptmin = config["ptbins"][iPt]
     ptmax = config["ptbins"][iPt+1]
 
@@ -146,9 +177,11 @@ def get_pt_preprocessed_sparses(config, iPt):
         infileprep = TFile(f"{config['outdir']}/preprocess/AnalysisResults_pt_{int(ptmin*10)}_{int(ptmax*10)}.root")
 
     if config["operations"].get("proj_data"):
-        for key, _ in pre_cfg["data"].items():
-            sparsesFlow[f'Flow_{key}'] = infileprep.Get(f'Data_Flow_{key}/hSparseFlowCharm')
-            resolutions[f'Reso_Flow_{key}'] = infileprep.Get(f'Data_Flow_{key}/hResolution')
+        inputs_dir = f"Data_FlowSP/hf-task-flow-charm-hadrons"
+        sparse_data_name = f"Data_{sparse_proj_cfg['name']}/{sparse_proj_cfg['path']}"
+        axes_dict['Flow'] = {ax: iax for iax, ax in enumerate(sparse_proj_cfg['axes']['names'])}
+        sparsesFlow[sparse_proj_cfg['name']] = infileprep.Get(sparse_data_name)
+        resolutions[f'Reso_{sparse_proj_cfg["name"]}'] = infileprep.Get(f'{inputs_dir}/histo_reso_delta_cent')
 
     if config["operations"].get("proj_mc"):
         subdir = infileprep.Get("MC/Reco")
@@ -167,7 +200,7 @@ def get_pt_preprocessed_sparses(config, iPt):
 
     return sparsesFlow, sparsesReco, sparsesGen, axes_dict, resolutions
 
-def get_sparses(config, get_data=True, get_mc=True, debug=False, MCBeforePRDplus=False):
+def get_sparses_data(files, full_cfg, sparse_cfg, debug=False):
     """Load the sparses and axes infos
 
     Args:
@@ -183,100 +216,116 @@ def get_sparses(config, get_data=True, get_mc=True, debug=False, MCBeforePRDplus
         axes_dict (dict): dictionary of the axes for each sparse
     """
 
-    sparsesFlow, sparsesReco, sparsesGen, resolutions = {}, {}, {}, {}
+    axes = get_sparses_dicts_data(sparse_cfg['name'])
+
+    sparses = []
+    with alive_bar(len(files), title=f"[INFO]\t\t[Data] Loading data sparses for {sparse_cfg['name']}") as bar:
+        for file in files:
+            print(f"Getting sparse {sparse_cfg['path']} from file {file.GetName()}")
+            sparse = file.Get(sparse_cfg['path'])
+            print(f"sparse: {sparse}")
+            print(f"type(sparse): {type(sparse)}")
+            # sparse.SetDirectory(0)
+            sparses.append(file.Get(sparse_cfg['path']))
+            print(f"sparse after append: {sparse}")
+            bar()
+
+    resolution = None
+    if full_cfg['preprocess']['data_type'] == 'SP':
+        logger(f"Loading resolution from {sparse_cfg['resolution']}", level='INFO')
+        resofile = TFile.Open(sparse_cfg["resolution"], 'r')
+        det_A = full_cfg.get('detA', 'FT0c')
+        det_B = full_cfg.get('detB', 'FV0a')
+        det_C = full_cfg.get('detC', 'TPCtot')
+        _, (centMin, centMax) = get_centrality_bins(full_cfg["centrality"])
+        print(f"cent_{centMin}_{centMax}/{det_A}_{det_B}_{det_C}/histo_reso_delta_cent")
+        resolution = resofile.Get(f'{det_A}_{det_B}_{det_C}/histo_reso_delta_cent')
+        resolution.SetDirectory(0)
+        resofile.Close()
+
+    logger("Sparses loaded", level='INFO')
+    if debug:
+        print('\n')
+        print('###############################################################')
+        for key, value in axes.items():
+            logger(f"    {key}: {value}", level='DEBUG')
+        print('###############################################################')
+        print('\n')
+
+    print(f"Returning sparses: {sparses}")
+    return sparses, axes, resolution
+
+def get_sparses_mc(config, get_mc=None, debug=False, MCBeforePRDplus=False):
+    """Load the sparses and axes infos
+
+    Args:
+        config (dict): the flow config dictionary
+        get_data (bool, optional): load data sparses. Defaults to True.
+        get_mc (bool, optional): load mc sparses. Defaults to True.
+        debug (bool, optional): print debug info. Defaults to False.
+
+    Outputs:
+        sparsesFlow: thnSparse in the flow task
+        sparsesReco: thnSparse of reco level from the D meson task
+        sparsesGen: thnSparse of gen level from the D meson task
+        axes_dict (dict): dictionary of the axes for each sparse
+    """
+
+    sparsesReco, sparsesGen = {}, {}
     print(f"MCBeforePRDplus: {MCBeforePRDplus}")
-    axes_dict = get_sparses_dicts(config, MCBeforePRDplus)
+    axes_dict = get_sparses_dicts(config, get_data, MCBeforePRDplus)
     pre_cfg = config['preprocess'] if config.get('preprocess') else config
-    if get_data:
-        logger(f"\t\t[Data] Loading data sparses from: {pre_cfg['data']}")
-        infileflow = []
-        resolutions = {}
-        for name, dataset in pre_cfg['data'].items():
-            # Collect all files starting with AnalysisResults_ and ending with .root in the dataset['files'] string
-            if isinstance(dataset["files"], str) and not dataset["files"].endswith(".root"):
-                list_of_files = [f for f in os.listdir(dataset["files"]) if f.endswith(".root")]
-                infileflow = [TFile(os.path.join(dataset["files"], file)) for file in list_of_files]
-            elif isinstance(dataset["files"], list):
-                if len(dataset["files"]) == 1:
-                    if dataset["files"][0].endswith(".root"):
-                        infileflow = [TFile(dataset["files"][0])]
-                    else:
-                        list_of_files = [f for f in os.listdir(dataset["files"][0]) if f.endswith(".root")]
-                        infileflow = [TFile(os.path.join(dataset["files"][0], file)) for file in list_of_files]
-                elif len(dataset["files"]) > 1:
-                    if all(file.endswith(".root") for file in dataset["files"]):
-                        infileflow = [TFile(file) for file in dataset["files"]]
-                    else:
-                        logger("The dataset contains multiple files, but not all of them are root files. Provide a single root file or a list of root files or a directory containing all root files.", level='ERROR')
-            else:
-                infileflow = [TFile(dataset["files"])] if isinstance(dataset["files"], str) else [TFile(file) for file in dataset["files"]]
-            sparsesFlow[f'Flow_{name}'] = []
-            with alive_bar(len(infileflow), title=f"[INFO]\t\t[Data] Loading data sparses for {name}") as bar:
-                for infile in infileflow:
-                    sparsesFlow[f'Flow_{name}'].append(infile.Get('hf-task-flow-charm-hadrons/hSparseFlowCharm'))
-                    bar()
-            [infile.Close() for infile in infileflow]
-            resofile = TFile.Open(dataset["resolution"], 'r')
-            det_A = config.get('detA', 'FT0c')
-            det_B = config.get('detB', 'FV0a')
-            det_C = config.get('detC', 'TPCtot')
-            _, (centMin, centMax) = get_centrality_bins(config["centrality"])
-            print(f"cent_{centMin}_{centMax}/{det_A}_{det_B}_{det_C}/histo_reso_delta_cent")
-            resolutions[f"Reso_Flow_{name}"] = resofile.Get(f'cent_{centMin}_{centMax}/{det_A}_{det_B}_{det_C}/histo_reso_delta_cent')
-            resolutions[f"Reso_Flow_{name}"].SetDirectory(0)
-            resofile.Close()
 
-    if get_mc:
-        print(f"Loading mc sparse from: {pre_cfg['mc']}")
-        infiletask = [TFile(pre_cfg['mc'])] if isinstance(pre_cfg['mc'], str) else [TFile(pre_cfg['mc']) for file in pre_cfg['mc']]
+    print(f"Loading mc sparse from: {pre_cfg['mc']}")
+    infiletask = [TFile(pre_cfg['mc'])] if isinstance(pre_cfg['mc'], str) else [TFile(pre_cfg['mc']) for file in pre_cfg['mc']]
 
-        if config['Dmeson'] == 'Dzero':
-            sparseD0Path = 'hf-task-d0/hBdtScoreVsMassVsPtVsPtBVsYVsOriginVsD0Type'
-            sparsesReco['RecoPrompt'] = [file.Get(sparseD0Path) for file in infiletask]
-            for ifile in range(len(sparsesReco['RecoPrompt'])):
-                sparsesReco['RecoPrompt'][ifile].GetAxis(axes_dict['RecoPrompt']['Origin']).SetRange(2, 2)    # make sure it is prompt
-                sparsesReco['RecoPrompt'][ifile].GetAxis(axes_dict['RecoPrompt']['CandType']).SetRange(1, 2) # make sure it is signal
+    if config['Dmeson'] == 'Dzero':
+        sparseD0Path = 'hf-task-d0/hBdtScoreVsMassVsPtVsPtBVsYVsOriginVsD0Type'
+        sparsesReco['RecoPrompt'] = [file.Get(sparseD0Path) for file in infiletask]
+        for ifile in range(len(sparsesReco['RecoPrompt'])):
+            sparsesReco['RecoPrompt'][ifile].GetAxis(axes_dict['RecoPrompt']['origin']).SetRange(2, 2)    # make sure it is prompt
+            sparsesReco['RecoPrompt'][ifile].GetAxis(axes_dict['RecoPrompt']['cand_type']).SetRange(1, 2) # make sure it is signal
 
-            sparsesReco['RecoFD'] = [file.Get(sparseD0Path) for file in infiletask]
-            for ifile in range(len(sparsesReco['RecoFD'])):
-                sparsesReco['RecoFD'][ifile].GetAxis(axes_dict['RecoPrompt']['Origin']).SetRange(3, 3)       # make sure it is non-prompt
-                sparsesReco['RecoFD'][ifile].GetAxis(axes_dict['RecoPrompt']['CandType']).SetRange(1, 2)    # make sure it is signal
+        sparsesReco['RecoFD'] = [file.Get(sparseD0Path) for file in infiletask]
+        for ifile in range(len(sparsesReco['RecoFD'])):
+            sparsesReco['RecoFD'][ifile].GetAxis(axes_dict['RecoPrompt']['origin']).SetRange(3, 3)       # make sure it is non-prompt
+            sparsesReco['RecoFD'][ifile].GetAxis(axes_dict['RecoPrompt']['cand_type']).SetRange(1, 2)    # make sure it is signal
 
-            sparsesReco['RecoRefl'] = [file.Get(sparseD0Path) for file in infiletask]
-            for ifile in range(len(sparsesReco['RecoRefl'])):
-                sparsesReco['RecoRefl'][ifile].GetAxis(axes_dict['RecoPrompt']['CandType']).SetRange(3, 4)  # make sure it is reflection
+        sparsesReco['RecoRefl'] = [file.Get(sparseD0Path) for file in infiletask]
+        for ifile in range(len(sparsesReco['RecoRefl'])):
+            sparsesReco['RecoRefl'][ifile].GetAxis(axes_dict['RecoPrompt']['cand_type']).SetRange(3, 4)  # make sure it is reflection
 
-            sparsesReco['RecoReflPrompt'] = [file.Get(sparseD0Path) for file in infiletask]
-            for ifile in range(len(sparsesReco['RecoReflPrompt'])):
-                sparsesReco['RecoReflPrompt'][ifile].GetAxis(axes_dict['RecoPrompt']['CandType']).SetRange(3, 4)  # make sure it is reflection
-                sparsesReco['RecoReflPrompt'][ifile].GetAxis(axes_dict['RecoPrompt']['Origin']).SetRange(2, 2)       # make sure it is prompt   
+        sparsesReco['RecoReflPrompt'] = [file.Get(sparseD0Path) for file in infiletask]
+        for ifile in range(len(sparsesReco['RecoReflPrompt'])):
+            sparsesReco['RecoReflPrompt'][ifile].GetAxis(axes_dict['RecoPrompt']['cand_type']).SetRange(3, 4)  # make sure it is reflection
+            sparsesReco['RecoReflPrompt'][ifile].GetAxis(axes_dict['RecoPrompt']['origin']).SetRange(2, 2)       # make sure it is prompt   
 
-            sparsesReco['RecoReflFD'] = [file.Get(sparseD0Path) for file in infiletask]
-            for ifile in range(len(sparsesReco['RecoReflFD'])):
-                sparsesReco['RecoReflFD'][ifile].GetAxis(axes_dict['RecoPrompt']['CandType']).SetRange(3, 4)    # make sure it is reflection
-                sparsesReco['RecoReflFD'][ifile].GetAxis(axes_dict['RecoPrompt']['Origin']).SetRange(3, 3)       # make sure it is FD
-            #TODO: safety checks for Dmeson reflecton and secondary peak
+        sparsesReco['RecoReflFD'] = [file.Get(sparseD0Path) for file in infiletask]
+        for ifile in range(len(sparsesReco['RecoReflFD'])):
+            sparsesReco['RecoReflFD'][ifile].GetAxis(axes_dict['RecoPrompt']['cand_type']).SetRange(3, 4)    # make sure it is reflection
+            sparsesReco['RecoReflFD'][ifile].GetAxis(axes_dict['RecoPrompt']['origin']).SetRange(3, 3)       # make sure it is FD
+        #TODO: safety checks for Dmeson reflecton and secondary peak
 
-            sparsesGen['GenPrompt'] = [file.Get('hf-task-d0/hSparseAcc') for file in infiletask]
-            for ifile in range(len(sparsesGen['GenPrompt'])):
-                sparsesGen['GenPrompt'][ifile].GetAxis(axes_dict['GenPrompt']['Origin']).SetRange(2, 2)  # make sure it is prompt
+        sparsesGen['GenPrompt'] = [file.Get('hf-task-d0/hSparseAcc') for file in infiletask]
+        for ifile in range(len(sparsesGen['GenPrompt'])):
+            sparsesGen['GenPrompt'][ifile].GetAxis(axes_dict['GenPrompt']['origin']).SetRange(2, 2)  # make sure it is prompt
 
-            sparsesGen['GenFD'] = [file.Get('hf-task-d0/hSparseAcc') for file in infiletask]
-            for ifile in range(len(sparsesGen['GenFD'])):
-                sparsesGen['GenFD'][ifile].GetAxis(axes_dict['GenFD']['Origin']).SetRange(3, 3)  # make sure it is non-prompt
-        elif config['Dmeson'] == 'Dplus':
-            sparsesReco['RecoFD']     = [file.Get('hf-task-dplus/hSparseMassFD') for file in infiletask]
-            sparsesReco['RecoPrompt'] = [file.Get('hf-task-dplus/hSparseMassPrompt') for file in infiletask]
-            sparsesGen['GenPrompt']   = [file.Get('hf-task-dplus/hSparseMassGenPrompt') for file in infiletask]
-            sparsesGen['GenFD']       = [file.Get('hf-task-dplus/hSparseMassGenFD') for file in infiletask]
+        sparsesGen['GenFD'] = [file.Get('hf-task-d0/hSparseAcc') for file in infiletask]
+        for ifile in range(len(sparsesGen['GenFD'])):
+            sparsesGen['GenFD'][ifile].GetAxis(axes_dict['GenFD']['origin']).SetRange(3, 3)  # make sure it is non-prompt
+    elif config['Dmeson'] == 'Dplus':
+        sparsesReco['RecoFD']     = [file.Get('hf-task-dplus/hSparseMassFD') for file in infiletask]
+        sparsesReco['RecoPrompt'] = [file.Get('hf-task-dplus/hSparseMassPrompt') for file in infiletask]
+        sparsesGen['GenPrompt']   = [file.Get('hf-task-dplus/hSparseMassGenPrompt') for file in infiletask]
+        sparsesGen['GenFD']       = [file.Get('hf-task-dplus/hSparseMassGenFD') for file in infiletask]
 
-        elif config['Dmeson'] == 'Ds':
-            sparsesReco['RecoPrompt'] = [file.Get('hf-task-ds/MC/Ds/Prompt/hSparseMass') for file in infiletask]
-            sparsesReco['RecoFD']     = [file.Get('hf-task-ds/MC/Ds/NonPrompt/hSparseMass') for file in infiletask]
-            sparsesGen['GenPrompt']   = [file.Get('hf-task-ds/MC/Ds/Prompt/hSparseGen') for file in infiletask]
-            sparsesGen['GenFD']       = [file.Get('hf-task-ds/MC/Ds/NonPrompt/hSparseGen') for file in infiletask]
+    elif config['Dmeson'] == 'Ds':
+        sparsesReco['RecoPrompt'] = [file.Get('hf-task-ds/MC/Ds/Prompt/hSparseMass') for file in infiletask]
+        sparsesReco['RecoFD']     = [file.Get('hf-task-ds/MC/Ds/NonPrompt/hSparseMass') for file in infiletask]
+        sparsesGen['GenPrompt']   = [file.Get('hf-task-ds/MC/Ds/Prompt/hSparseGen') for file in infiletask]
+        sparsesGen['GenFD']       = [file.Get('hf-task-ds/MC/Ds/NonPrompt/hSparseGen') for file in infiletask]
 
-        [infile.Close() for infile in infiletask]
+    [infile.Close() for infile in infiletask]
 
     logger("Sparses loaded", level='INFO')
     if debug:
@@ -288,4 +337,4 @@ def get_sparses(config, get_data=True, get_mc=True, debug=False, MCBeforePRDplus
                 logger(f"    {sub_key}: {sub_value}", level='DEBUG')
         print('###############################################################')
         print('\n')
-    return sparsesFlow, sparsesReco, sparsesGen, axes_dict, resolutions
+    return sparsesReco, sparsesGen, axes_dict
