@@ -108,6 +108,7 @@ DhCorrelationExtraction::DhCorrelationExtraction() : // default constructor
                                                      fSecPartContamination(0),
                                                      fCorrBiasBtoD(0)
 {
+  printf("[INFO] DhCorrelationExtraction default constructor called!\n");
 }
 
 DhCorrelationExtraction::DhCorrelationExtraction(const DhCorrelationExtraction& source) : // copy constructor
@@ -756,7 +757,7 @@ Bool_t DhCorrelationExtraction::ReadInputSEandME()
 
 Bool_t DhCorrelationExtraction::ReadInputInvMass()
 {
-
+  std::cout << "Reading inv. mass file " << fFileNameMass << std::endl;
   fFileMass = TFile::Open(fFileNameMass.Data());
   if (!fFileMass) {
     std::cout << "[ERROR] File " << fFileNameMass << " cannot be opened! check your file path!";
@@ -1008,33 +1009,45 @@ void DhCorrelationExtraction::GetSignalAndBackgroundForNorm(Double_t PtCandMin, 
 
 void DhCorrelationExtraction::GetSignalAndBackgroundForNorm_v2(Double_t PtCandMin, Double_t PtCandMax, Double_t InvMassMin, Double_t InvMassMax)
 {
-
+  std::cout << "================================= " << std::endl;
+  std::cout << "Getting invariant mass parameters v2" << std::endl;
   // using results obtained from HFInvariantMassFitter.cxx class
+  std::cout << "CIAO0" << std::endl;
+  std::cout << "fMassHistoNameSgn = " << fMassHistoNameSgn << std::endl;
+  std::cout << "fFileMass.GetName() = " << fFileMass->GetName() << std::endl;
   THnSparseF* hMassSparse = reinterpret_cast<THnSparseF*>(fFileMass->Get(fMassHistoNameSgn.Data()));
   TH2F* hMassFitSgnYield = reinterpret_cast<TH2F*>(hMassSparse->Projection(1,0));
+  std::cout << "CIAO1" << std::endl;
   hMassFitSgnYield -> SetName("hMassVsPt");
-
+  std::cout << "CIAO2" << std::endl;
+  
   fMassVsPt = hMassFitSgnYield;
-
+  std::cout << "CIAO3" << std::endl;
+  
   Int_t ptBinMin = hMassFitSgnYield->GetYaxis()->FindBin(PtCandMin + 1e-6);
   Int_t ptBinMax = hMassFitSgnYield->GetYaxis()->FindBin(PtCandMax - 1e-6);
-
+  std::cout << "CIAO3" << std::endl;
+  
   TH1D* hMass = hMassFitSgnYield->ProjectionX(Form("%s_proj_mass", hMassFitSgnYield->GetName()), ptBinMin, ptBinMax);
-
+  std::cout << "CIAO4" << std::endl;
+  
   Int_t massBinMin = hMass->GetXaxis()->FindBin(InvMassMin);
   Int_t massBinMax = hMass->GetXaxis()->FindBin(InvMassMax);
-
+  std::cout << "CIAO5" << std::endl;
+  
   // Integral of projected histogram in mass range
   Double_t SgnYield = hMass->Integral(massBinMin, massBinMax);
-
+  
   std::cout << "================================= " << std::endl;
   std::cout << "Getting invariant mass parameters " << std::endl;
   std::cout << "Pt cand " << PtCandMin << " - " << PtCandMax << std::endl;
   std::cout << "Inv mass yield for norm   = " << SgnYield << std::endl;
   std::cout << "================================= " << std::endl;
   std::cout << " " << std::endl;
-
+  
+  std::cout << "CIAO6" << std::endl;
   SetSignalYieldforNorm(SgnYield);
+  std::cout << "CIAO7" << std::endl;
 
   return;
 }

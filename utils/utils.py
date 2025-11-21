@@ -42,9 +42,14 @@ def logger(message, level='INFO'):
 	else:
 		print(f"\033[37m{message}\033[0m")  # Default to white for unknown levels
 
-def make_dir_root_file(dir, file):
-    if not file.GetDirectory(dir):
-        file.mkdir(dir)
+def make_dir_root_file(directory, file):
+    if not file.GetDirectory(directory):
+        print(f"Creating directory {directory} in file {file.GetName()}")
+        file.mkdir(directory)
+        print(f"Directory {directory} created successfully in file {file.GetName()}")
+        # quit()
+    else:
+        print(f"Directory {directory} already exists in file {file.GetName()}")
 
 def profile_mass_sp(hist_mass_sp, inv_mass_bins, resolution):
     '''

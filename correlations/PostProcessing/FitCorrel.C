@@ -61,6 +61,9 @@ void SetTH1HistoStyle(TH1F*& histo, TString hTitle, TString hXaxisTitle, TString
 
 void FitCorrel(const TString cfgFileName = "config_CorrAnalysis.json")
 {
+  std::cout << "=========================== " << std::endl;
+  std::cout << "   D-h Correlation Fitting  " << std::endl;
+  std::cout << "=========================== " << std::endl;
   gStyle->SetOptStat(0);
   gStyle->SetPadLeftMargin(0.2);
   gStyle->SetPadRightMargin(0.005);
@@ -70,69 +73,85 @@ void FitCorrel(const TString cfgFileName = "config_CorrAnalysis.json")
   gStyle->SetCanvasDefH(1126);
   gStyle->SetCanvasDefW(1840);
 
+  std::cout << "Style set" << std::endl;
   // Load config
+  std::cout << "Loading config file: " << cfgFileName.Data() << std::endl;
   FILE* configFile = fopen(cfgFileName.Data(), "r");
   Document config;
   char readBuffer[65536];
   FileReadStream is(configFile, readBuffer, sizeof(readBuffer));
   config.ParseStream(is);
   fclose(configFile);
+  std::cout << "Config file loaded" << std::endl;
 
   string CodeNameAnalysis = config["CodeName"].GetString();
   gSystem->Exec(Form("rm -rf Output_CorrelationFitting_%s_Root/ Output_CorrelationFitting_%s_png/", CodeNameAnalysis.data(), CodeNameAnalysis.data()));
   gSystem->Exec(Form("mkdir Output_CorrelationFitting_%s_Root/ Output_CorrelationFitting_%s_png/", CodeNameAnalysis.data(), CodeNameAnalysis.data()));
-
+  std::cout << "Output directories created" << std::endl;
   string inputFileNameFit = config["InputFileNameFitCorr"].GetString();
   const TString inFileName = Form("Output_CorrelationExtraction_%s_Root/%s", CodeNameAnalysis.data(), inputFileNameFit.data());
-
+  std::cout << "Input file name for fitting: " << inFileName.Data() << std::endl;
   bool isReflected = config["IsRiflected"].GetBool();
   bool drawSystematicErrors = config["DrawSystematics"].GetBool();
   bool sameSystematics = config["SameSystematics"].GetBool();
   bool shiftBaseUp = config["ShiftBaseUp"].GetBool();
   bool shiftBaseDown = config["ShiftBaseDown"].GetBool();
+  std::cout << "Input file name retrieved from config" << std::endl;
 
   std::vector<double> binsInvMassIntervals;
   std::vector<double> binsPtCandIntervalsVec;
   std::vector<double> binsPtHadIntervals;
   std::vector<int> fitFunc;
+  std::cout << "Reading bin intervals and fit function from config" << std::endl;
 
   const Value& InvMassValue = config["binsInvMassIntervals"];
   readArray(InvMassValue, binsInvMassIntervals);
+  std::cout << "binsInvMassIntervals size: " << binsInvMassIntervals.size() << std::endl;
 
   const Value& PtCandValue = config["binsPtCandIntervals"];
   readArray(PtCandValue, binsPtCandIntervalsVec);
+  std::cout << "binsPtCandIntervals size: " << binsPtCandIntervalsVec.size() << std::endl;
 
   const Value& PtHadValue = config["binsPtHadIntervals"];
   readArray(PtHadValue, binsPtHadIntervals);
+  std::cout << "binsPtHadIntervals size: " << binsPtHadIntervals.size() << std::endl;
 
   std::vector<double> parVals;
   std::vector<double> parLowBounds;
   std::vector<double> parUpperBounds;
+  std::cout << "Reading fit parameters from config" << std::endl;
 
   const Value& ParVals = config["parVals"];
   readArray(ParVals, parVals);
+  std::cout << "parVals size: " << parVals.size() << std::endl;
 
   const Value& ParLowBounds = config["parLowBounds"];
   readArray(ParLowBounds, parLowBounds);
+  std::cout << "parLowBounds size: " << parLowBounds.size() << std::endl;
 
   const Value& ParUpperBounds = config["parUpperBounds"];
   readArray(ParUpperBounds, parUpperBounds);
+  std::cout << "parUpperBounds size: " << parUpperBounds.size() << std::endl;
 
   const int nBinsInvMass = binsInvMassIntervals.size() - 1;
   const int nBinsPtCand = binsPtCandIntervalsVec.size() - 1;
   const int nBinsPtHad = binsPtHadIntervals.size() - 1;
   const int npars = parVals.size();
+  std::cout << "nBinsInvMass: " << nBinsInvMass << std::endl;
 
   double binsPtCandIntervals[nBinsPtCand + 1];
   for (int i = 0; i < nBinsPtCand + 1; i++) {
     binsPtCandIntervals[i] = binsPtCandIntervalsVec[i];
   }
+  std::cout << "Converted binsPtCandIntervals to C-style array" << std::endl;
 
   const Value& FitFuncValue = config["FitFunction"];
   readArray(FitFuncValue, fitFunc);
+  std::cout << "fitFunc size: " << fitFunc.size() << std::endl;
 
   int fixBase = config["FixBaseline"].GetInt();
   int fixMean = config["FixMean"].GetInt();
+  std::cout << "FixBaseline: " << fixBase << std::endl;
 
   int nBaselinePoints = config["nBaselinePoints"].GetInt();
   vector<int> pointsForBaselineVec;
@@ -142,10 +161,12 @@ void FitCorrel(const TString cfgFileName = "config_CorrAnalysis.json")
     cout << "ERROR: size of the vector pointsForBaseline is different from the number of nBaselinePoints" << endl;
     return;
   }
+  std::cout << "nBaselinePoints: " << nBaselinePoints << std::endl;
   int pointsForBaseline[nBaselinePoints];
   for (int i = 0; i < nBaselinePoints; i++) {
     pointsForBaseline[i] = pointsForBaselineVec[i];
   }
+  std::cout << "Converted pointsForBaseline to C-style array" << std::endl;
 
   std::cout << "=========================== " << std::endl;
   std::cout << "Input variables from config" << std::endl;
@@ -159,23 +180,29 @@ void FitCorrel(const TString cfgFileName = "config_CorrAnalysis.json")
 
   // TODO: reflections
   bool refl = false;
+  std::cout << "isReflected: " << isReflected << std::endl;
 
   // Input file
+  std::cout << "Opening input file: " << inFileName.Data() << std::endl;
   TFile* inFile = new TFile(inFileName.Data());
-  TFile* inFileSystematicErrors = new TFile("OutputSystematicUncertainties/SystematicUncertaintesAngCorrMerged.root");
-  TFile* inFileFitSystematicErrors = new TFile("OutputSystematicUncertainties/SystematicUncertaintesFitPhysObsMerged.root");
+  TFile* inFileSystematicErrors = new TFile("OutputSystematicUncertainties/SystematicUncertaintesAngCorrMerged.root", "recreate");
+  TFile* inFileFitSystematicErrors = new TFile("OutputSystematicUncertainties/SystematicUncertaintesFitPhysObsMerged.root", "recreate");
+  std::cout << "Input file opened" << std::endl;
 
   // Canvas
   TCanvas* CanvasCorrPhi[nBinsPtHad][nBinsInvMass];
+  std::cout << "Canvas declared" << std::endl;
 
   // Histograms
   TH1D* hCorrPhi[nBinsPtCand][nBinsPtHad][nBinsInvMass];
   TH1F* hSystematicErrors[nBinsPtCand][nBinsPtHad][nBinsInvMass];
   TH1D* hSystematicErrorsPlot[nBinsPtCand][nBinsPtHad][nBinsInvMass];
+  std::cout << "Histograms declared" << std::endl;
 
   // DhCorrelationFitter
   const double fMin{-0.5 * TMath::Pi()}, fMax{1.5 * TMath::Pi()}; // limits for the fitting function
   DhCorrelationFitter* corrFitter[nBinsPtHad][nBinsPtCand][nBinsInvMass];
+  std::cout << "DhCorrelationFitter declared" << std::endl;
 
   // Output histograms
   TH1D* hBaselin[nBinsPtHad][nBinsInvMass];

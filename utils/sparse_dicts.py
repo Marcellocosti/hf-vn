@@ -172,9 +172,9 @@ def get_pt_preprocessed_sparses(config, iPt):
     ptmax = config["ptbins"][iPt+1]
 
     if config.get("outdirPrep") and config["outdirPrep"] != "":
-        infileprep = TFile(f"{config['outdirPrep']}/preprocess/AnalysisResults_pt_{int(ptmin*10)}_{int(ptmax*10)}.root")
+        infileprep = TFile(f"{config['outdirPrep']}/preprocess/{int(ptmin*10)}_{int(ptmax*10)}/AnalysisResults.root")
     else:
-        infileprep = TFile(f"{config['outdir']}/preprocess/AnalysisResults_pt_{int(ptmin*10)}_{int(ptmax*10)}.root")
+        infileprep = TFile(f"{config['outdir']}/preprocess/{int(ptmin*10)}_{int(ptmax*10)}/AnalysisResults.root")
 
     if config["operations"].get("proj_data"):
         inputs_dir = f"Data_FlowSP/hf-task-flow-charm-hadrons"
@@ -200,7 +200,7 @@ def get_pt_preprocessed_sparses(config, iPt):
 
     return sparsesFlow, sparsesReco, sparsesGen, axes_dict, resolutions
 
-def get_sparses_data(files, full_cfg, sparse_cfg, debug=False):
+def get_sparses_data(file, full_cfg, sparse_cfg, debug=False):
     """Load the sparses and axes infos
 
     Args:
@@ -216,19 +216,9 @@ def get_sparses_data(files, full_cfg, sparse_cfg, debug=False):
         axes_dict (dict): dictionary of the axes for each sparse
     """
 
+    print(f"Loading data sparse {sparse_cfg['path']} from file {file.GetName()}")
     axes = get_sparses_dicts_data(sparse_cfg['name'])
-
-    sparses = []
-    with alive_bar(len(files), title=f"[INFO]\t\t[Data] Loading data sparses for {sparse_cfg['name']}") as bar:
-        for file in files:
-            print(f"Getting sparse {sparse_cfg['path']} from file {file.GetName()}")
-            sparse = file.Get(sparse_cfg['path'])
-            print(f"sparse: {sparse}")
-            print(f"type(sparse): {type(sparse)}")
-            # sparse.SetDirectory(0)
-            sparses.append(file.Get(sparse_cfg['path']))
-            print(f"sparse after append: {sparse}")
-            bar()
+    sparse = file.Get(sparse_cfg['path'])
 
     resolution = None
     if full_cfg['preprocess']['data_type'] == 'SP':
@@ -252,8 +242,8 @@ def get_sparses_data(files, full_cfg, sparse_cfg, debug=False):
         print('###############################################################')
         print('\n')
 
-    print(f"Returning sparses: {sparses}")
-    return sparses, axes, resolution
+    print(f"Returning sparses: {sparse}")
+    return sparse, axes, resolution
 
 def get_sparses_mc(config, get_mc=None, debug=False, MCBeforePRDplus=False):
     """Load the sparses and axes infos
@@ -273,7 +263,7 @@ def get_sparses_mc(config, get_mc=None, debug=False, MCBeforePRDplus=False):
 
     sparsesReco, sparsesGen = {}, {}
     print(f"MCBeforePRDplus: {MCBeforePRDplus}")
-    axes_dict = get_sparses_dicts(config, get_data, MCBeforePRDplus)
+    axes_dict = get_sparses_dicts_mc(config, config['Dmeson'], MCBeforePRDplus)
     pre_cfg = config['preprocess'] if config.get('preprocess') else config
 
     print(f"Loading mc sparse from: {pre_cfg['mc']}")

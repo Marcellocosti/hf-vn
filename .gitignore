@@ -7,3 +7,10 @@
 # test files to ignore
 test*
 resolution/reso*
+
+# compilation files
+*.so
+*.d
+*.pcm
+*_dictContent.h
+*_dictUmbrella.h

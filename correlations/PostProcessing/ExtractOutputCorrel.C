@@ -21,6 +21,7 @@
 
 #include <TROOT.h>
 #include <TStyle.h>
+#include <TSystem.h>
 
 #include <rapidjson/document.h>
 #include <rapidjson/filereadstream.h>
@@ -221,7 +222,11 @@ void ExtractOutputCorrel(const TString cfgFileName = "config_CorrAnalysis.json")
   // TH1D* hCorrectedCorrel_Reflected_BaselineSubtr[nBinsPtCand][nBinsPtHad][nBinsInvMass];
 
   // Create and set the correlation plotter class
+  std::cout << "Creating DhCorrelationExtraction class..." << std::endl;
   DhCorrelationExtraction* plotter = new DhCorrelationExtraction();
+  std::cout << "Created class: plotter=" << plotter 
+          << ", IsA()->GetName()=" << plotter->IsA()->GetName() << std::endl;
+  std::cout << "DhCorrelationExtraction class created." << std::endl;
 
   Bool_t flagSpecie = plotter->SetDmesonSpecie(static_cast<DhCorrelationExtraction::DmesonSpecie>(specie));
   plotter->SetNpools(npools);
@@ -270,10 +275,18 @@ void ExtractOutputCorrel(const TString cfgFileName = "config_CorrAnalysis.json")
   // Loop over candidate pt and assoc. particle pt
   for (int iBinInvMass = 0; iBinInvMass < nBinsInvMass; iBinInvMass++) {
     std::cout << "[INFO] InvMass: " << binsInvMassIntervals[iBinInvMass] << " - "<< binsInvMassIntervals[iBinInvMass+1] << std::endl;
+    std::cout << "Start loop cand. pt, nbins: " << nBinsPtCand << std::endl;
     for (int iBinPtCand = 0; iBinPtCand < nBinsPtCand; iBinPtCand++) {
+      std::cout << "[INFO]   PtCand: " << binsPtCandIntervals[iBinPtCand] << " - "<< binsPtCandIntervals[iBinPtCand+1] << std::endl;
       plotter->SetDividedSidebands(isDividedSideb, useSidebLeft, useSidebRight);
+      std::cout << "Getting signal and background for norm..." << std::endl;
       //plotter->GetSignalAndBackgroundForNorm(binsPtCandIntervals[iBinPtCand], binsPtCandIntervals[iBinPtCand + 1]);
+      std::cout << "binsPtCandIntervals[iBinPtCand]: " << binsPtCandIntervals[iBinPtCand] << std::endl;
+      std::cout << "binsPtCandIntervals[iBinPtCand + 1]: " << binsPtCandIntervals[iBinPtCand + 1] << std::endl;
+      std::cout << "binsInvMassIntervals[iBinInvMass]: " << binsInvMassIntervals[iBinInvMass] << std::endl;
+      std::cout << "binsInvMassIntervals[iBinInvMass + 1]: " << binsInvMassIntervals[iBinInvMass + 1] << std::endl;
       plotter->GetSignalAndBackgroundForNorm_v2(binsPtCandIntervals[iBinPtCand], binsPtCandIntervals[iBinPtCand + 1], binsInvMassIntervals[iBinInvMass], binsInvMassIntervals[iBinInvMass + 1]);
+      std::cout << "Start loop had. pt, nbins: " << nBinsPtHad << std::endl;
       for (int iBinPtHad = 0; iBinPtHad < nBinsPtHad; iBinPtHad++) {
         plotter->SetBinCandAndHad(iBinPtCand + 1, iBinPtHad + 1, iBinInvMass + 1);
         plotter->ExtractCorrelations(binsPtCandIntervals[iBinPtCand], binsPtCandIntervals[iBinPtCand + 1], binsPtHadIntervals[iBinPtHad], binsPtHadIntervals[iBinPtHad + 1], binsInvMassIntervals[iBinInvMass], binsInvMassIntervals[iBinInvMass + 1], CodeNameAnalysis);
