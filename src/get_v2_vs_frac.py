@@ -192,7 +192,7 @@ def get_vn_vs_mass(fitConfigFileName, centClass, inFileName,
     reso = hist_reso.GetBinContent(1)
     inclSecPeak = [inclSecPeak] * nPtBins if not isinstance(inclSecPeak, list) else inclSecPeak
     for iPt, (ptMin, ptMax) in enumerate(zip(ptMins, ptMaxs)):
-        if not vn_method == 'sp' and not vn_method == 'ep':
+        if not vn_method == 'Sp' and not vn_method == 'ep':
             print(f'loading: cent_bins{cent}/pt_bins{ptMin}_{ptMax}/hist_mass_cent{cent}_pt{ptMin}_{ptMax}')
             hMassIns.append(infile.Get(f'cent_bins{cent}/pt_bins{ptMin}_{ptMax}/hist_mass_inplane_cent{cent}_pt{ptMin}_{ptMax}'))
             hMassOuts.append(infile.Get(f'cent_bins{cent}/pt_bins{ptMin}_{ptMax}/hist_mass_outplane_cent{cent}_pt{ptMin}_{ptMax}'))
@@ -242,7 +242,7 @@ def get_vn_vs_mass(fitConfigFileName, centClass, inFileName,
         useRefl = False
 
     # create histos for fit results
-    if vn_method == 'sp' or vn_method == 'ep':
+    if vn_method == 'Sp' or vn_method == 'ep':
         hSigmaSimFit = TH1D('hSigmaSimFit', f';{ptTit};#sigma', nPtBins, ptBinsArr)
         hMeanSimFit = TH1D('hMeanSimFit', f';{ptTit};mean', nPtBins, ptBinsArr)
         hMeanSecPeakFitMass = TH1D('hMeanSecondPeakFitMass', f';{ptTit};mean second peak mass fit', nPtBins, ptBinsArr)
@@ -354,7 +354,7 @@ def get_vn_vs_mass(fitConfigFileName, centClass, inFileName,
     latex.SetNDC()
     latex.SetTextSize(0.04)
 
-    if vn_method == 'sp' or vn_method == 'ep':
+    if vn_method == 'Sp' or vn_method == 'ep':
         cSimFit = []
         cInvMassPrefits = []
         for i in range(nPtBins):
@@ -373,7 +373,7 @@ def get_vn_vs_mass(fitConfigFileName, centClass, inFileName,
 
     #_____________________________________________________
     # Vn estimation with Scalar Product / Event Plane
-    if vn_method == 'sp' or vn_method == 'ep':
+    if vn_method == 'Sp' or vn_method == 'ep':
         print(f"len(hMass): {len(hMass)}") 
         print(f"len(hVn): {len(hVn)}") 
         print(f"len(ptMins): {len(ptMins)}") 
@@ -943,7 +943,7 @@ def get_vn_vs_mass(fitConfigFileName, centClass, inFileName,
 
     #save output histos
     print(f'Saving output to {outputdir}')
-    if vn_method == 'sp' or vn_method == 'ep':
+    if vn_method == 'Sp' or vn_method == 'ep':
         for iPt, (ptMin, ptMax) in enumerate(zip(ptMins, ptMaxs)):
             if iPt == 0:
                 suffix_pdf = '('
@@ -957,7 +957,7 @@ def get_vn_vs_mass(fitConfigFileName, centClass, inFileName,
                 cSimFit[iPt].SaveAs(f'{outputdir}/SimFit{suffix}_{particleName}.pdf{suffix_pdf}')
     outfile_name = f'{outputdir}/raw_yields{suffix}.root'
     outFile = TFile(outfile_name, 'recreate')
-    if vn_method == 'sp' or vn_method == 'ep':
+    if vn_method == 'Sp' or vn_method == 'ep':
         for canv in cSimFit:
             canv.Write()
         for canvPrefit in cInvMassPrefits:
@@ -1052,7 +1052,7 @@ if __name__ == "__main__":
                         default=".", help="output directory")
     parser.add_argument("--suffix", "-s", metavar="text",
                         default="", help="suffix for output files")
-    parser.add_argument('--vn_method', '-vn', metavar='text', default='sp')
+    parser.add_argument('--vn_method', '-vn', metavar='text', default='Sp')
     parser.add_argument('--batch', help='suppress video output', action='store_true')
     args = parser.parse_args()
 

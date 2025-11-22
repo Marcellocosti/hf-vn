@@ -15,7 +15,7 @@ gROOT.SetBatch(1)
 parser = argparse.ArgumentParser(description='Arguments')
 parser.add_argument('fitConfigFileName', metavar='text', default='config_Dplus_Fit.yml')
 parser.add_argument('inFileName', metavar='text', default='')
-parser.add_argument('cent', metavar='text', default='')
+parser.add_argument('Cent', metavar='text', default='')
 parser.add_argument("--outputdir", "-o", metavar="text",
                     default=".", help="output directory")
 parser.add_argument("--suffix", "-s", metavar="text",

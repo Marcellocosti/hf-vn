@@ -193,7 +193,7 @@ def getListOfHisots(an_res_file, wagon_id, vn_method):
     infile_path = f'hf-task-flow-charm-hadrons'
     if wagon_id:
         infile_path = f'{infile_path}_id{wagon_id}'
-    if vn_method != 'sp':
+    if vn_method != 'Sp':
         infile_path = f'{infile_path}/{vn_method}Reso'
         prefix = f'hEpReso'
     else:
@@ -286,7 +286,7 @@ def compute_r2(reso_file, wagon_id, cent_min, cent_max, detA, detB, detC, vn_met
     '''
     if wagon_id != '':
         wagon_id = f'{wagon_id}'
-    if vn_method != 'sp':
+    if vn_method != 'Sp':
         hist_name = f'hf-task-flow-charm-hadrons{wagon_id}/epReso/hEpReso'
     else:
         hist_name = f'hf-task-flow-charm-hadrons{wagon_id}/spReso/hSpReso'

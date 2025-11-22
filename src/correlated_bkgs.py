@@ -89,7 +89,7 @@ def produce_corr_bkgs_templs(config_flow, cutset_config, correlatedCutsets):
     for ipt_bin, (pt_min, pt_max, score_bkg_max, score_fd_min, score_fd_max) in enumerate(zip(cfg_cutset["Pt"]["min"],
                                                                                               cfg_cutset["Pt"]["max"],
                                                                                               cfg_cutset["score_bkg"]["max"],
-                                                                                              cfg_cutset["score_FD"]["min"],
+                                                                                              cfg_cutset["ScoreFD"]["min"],
                                                                                               cfg_cutset["score_FD"]["max"])):
         pt_key = f"pt_{int(pt_min*10)}_{int(pt_max*10)}"
         histo_weights_dict = {}

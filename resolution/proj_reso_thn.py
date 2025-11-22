@@ -18,7 +18,7 @@ SetGlobalStyle(padleftmargin=0.15, padbottommargin=0.15,
                labelsizey=0.04, setoptstat=0, setopttitle=0, palette=ROOT.kGreyScale)
 
 ax_reso = {
-    'cent': 0,
+    'Cent': 0,
     'FT0cFV0a': 1,
     'FT0cTPCtot': 2,
     'FV0aTPCtot': 3,
@@ -58,15 +58,15 @@ def process_reso_sparse(isparse, sparse, iOcc, occ, ax_evsels, ax_reso):
     for ax in ax_evsels:
         sparse.GetAxis(ax).SetRange(1,1)    # Binary flags
 
-    hFT0cFV0a = sparse.Projection(ax_reso['FT0cFV0a'], ax_reso['cent'])
+    hFT0cFV0a = sparse.Projection(ax_reso['FT0cFV0a'], ax_reso['Cent'])
     hFT0cFV0a.SetName(f'hFT0cFV0a_{iOcc}_{isparse}')
     hFT0cFV0a.SetDirectory(0)
 
-    hFT0cTPCtot = sparse.Projection(ax_reso['FT0cTPCtot'], ax_reso['cent'])
+    hFT0cTPCtot = sparse.Projection(ax_reso['FT0cTPCtot'], ax_reso['Cent'])
     hFT0cTPCtot.SetName(f'hFT0cTPCtot_{iOcc}_{isparse}')
     hFT0cTPCtot.SetDirectory(0)
     
-    hFV0aTPCtot = sparse.Projection(ax_reso['FV0aTPCtot'], ax_reso['cent'])
+    hFV0aTPCtot = sparse.Projection(ax_reso['FV0aTPCtot'], ax_reso['Cent'])
     hFV0aTPCtot.SetName(f'hFV0aTPCtot_{iOcc}_{isparse}')
     hFV0aTPCtot.SetDirectory(0)
 
@@ -191,7 +191,7 @@ def create_resolution_dataframe(config):
 #         for file, suffix in zip(files, suffixes):
 #             print(f"Processing file: {file}")
 #             os.system(f"python3 /home/mdicosta/alice/DmesonAnalysis/run3/flow/compute_reso.py \
-#                         {file} -c {cent_string} -vn {'sp'} -o {outdir} -s {suffix}")
+#                         {file} -c {cent_string} -vn {'Sp'} -o {outdir} -s {suffix}")
 #         resos, labels = produce_plots(config, outdir, cent_string, suffixes)
 
 # def produce_plots(config, outdir, cent_string, suffixes, all_key='all'):
