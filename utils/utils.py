@@ -5,6 +5,7 @@ import ROOT
 import ctypes
 from ROOT import TH1, TH2, TH3, TFile
 import numpy as np
+from matplotlib.offsetbox import AnchoredText
 
 def check_dir(dir):
 
@@ -17,6 +18,45 @@ def check_dir(dir):
 		os.makedirs(dir)
 
 	return
+
+# pylint: disable=too-many-arguments
+def add_info_on_canvas(axs, loc, system, pt_min, pt_max, fitter=None):
+    """
+    Helper method to add text on flarefly mass fit plot
+
+    Parameters
+    ----------
+    - axs: matplotlib.figure.Axis
+        Axis instance of the mass fit figure
+
+    - loc: str
+        Location of the info on the figure
+
+    - system: str
+        System (pp, MC pp)
+
+    - pt_min: float
+        Minimum pT value in the pT range
+
+    - pt_max: float
+        Maximum pT value in the pT range
+
+    - fitter: F2MassFitter
+        Fitter instance allowing to access chi2 and ndf if wanted
+    """
+    xspace = " "
+    text = xspace
+    if fitter is not None:
+        chi2 = fitter.get_chi2()
+        ndf = fitter.get_ndf()
+        text += fr"$\chi^2 / \mathrm{{ndf}} =${chi2:.2f} / {ndf} $\simeq$ {chi2/ndf:.2f}""\n"
+
+    text += "\n\n"
+    text += xspace + system + ", " + r"$\sqrt{s} = 13.6$ TeV" + "\n"
+    text += xspace + fr"{pt_min:.1f} < $p_{{\mathrm{{T}}}}$ < {pt_max:.1f} GeV/$c$, $|y|$ < 0.5""\n"
+
+    anchored_text = AnchoredText(text, loc=loc, frameon=False)
+    axs.add_artist(anchored_text)
 
 def logger(message, level='INFO'):
 	"""
@@ -77,7 +117,57 @@ def profile_mass_sp(hist_mass_sp, inv_mass_bins, resolution):
         hist_vn_vs_mass.SetBinError(i+1, mean_sp_err / resolution)
     return hist_vn_vs_mass
 
-def get_vn_versus_mass(thnSparses, resolutions, inv_mass_bins, mass_axis, vn_axis, sampling=-1, debug=False):
+# def get_vn_versus_mass(thnSparses, resolutions, inv_mass_bins, mass_axis, vn_axis, sampling=-1, debug=False):
+#     '''
+#     Project vn versus mass
+
+#     Input:
+#         - thnSparse:
+#             THnSparse, input THnSparse obeject (already projected in centrality and pt)
+#         - inv_mass_bins:
+#             list of floats, bin edges for the mass axis
+#         - mass_axis:
+#             int, axis number for mass
+#         - vn_axis:
+#             int, axis number for vn
+#         - debug:
+#             bool, if True, create a debug file with the projections (default: False)
+
+#     Output:
+#         - hist_mass_proj:
+#             TH1D, histogram with vn as a function of mass
+#     '''
+
+#     invmass_bins = np.array(inv_mass_bins)
+
+#     if sampling != -1:
+#         print('Sampling vn versus mass to be implemented!')
+#     else:
+#         for iThn, ((_, sparse), (_, reso)) in enumerate(zip(thnSparses.items(), resolutions.items())):
+#             resolution = reso.GetBinContent(1)
+#             hist_vn_proj_temp = sparse.Projection(vn_axis, mass_axis)
+#             hist_vn_proj_temp.SetName(f'hist_vn_proj_{iThn}')
+#             hist_vn_proj_temp.SetDirectory(0)
+            
+#             if iThn == 0:
+#                 hist_vn_proj = hist_vn_proj_temp.Clone('hist_vn_proj')
+#                 hist_vn_proj.SetDirectory(0)
+#                 hist_vn_proj.Reset()
+
+#             hist_vn_proj.Add(hist_vn_proj_temp)
+
+#         hist_vn_vs_mass = profile_mass_sp(hist_vn_proj, invmass_bins, resolution)
+
+#     if debug:
+#         outfile = ROOT.TFile('debug.root', 'RECREATE')
+#         hist_vn_proj.Write()
+#         hist_vn_vs_mass.Write()
+#         outfile.Close()
+
+#     return hist_vn_vs_mass
+
+
+def get_vn_versus_mass(thnSparses, inv_mass_bins, mass_axis, vn_axis, debug=False):
     '''
     Project vn versus mass
 
@@ -97,34 +187,45 @@ def get_vn_versus_mass(thnSparses, resolutions, inv_mass_bins, mass_axis, vn_axi
         - hist_mass_proj:
             TH1D, histogram with vn as a function of mass
     '''
-
-    invmass_bins = np.array(inv_mass_bins)
-
-    if sampling != -1:
-        print('Sampling vn versus mass to be implemented!')
-    else:
-        for iThn, ((_, sparse), (_, reso)) in enumerate(zip(thnSparses.items(), resolutions.items())):
-            resolution = reso.GetBinContent(1)
-            hist_vn_proj_temp = sparse.Projection(vn_axis, mass_axis)
-            hist_vn_proj_temp.SetName(f'hist_vn_proj_{iThn}')
-            hist_vn_proj_temp.SetDirectory(0)
+    if not isinstance(thnSparses, list):
+        thnSparses = [thnSparses]
+        
+    for iThn, thnSparse in enumerate(thnSparses):
+        hist_vn_proj_temp = thnSparse.Projection(vn_axis, mass_axis)
+        hist_vn_proj_temp.SetName(f'hist_vn_proj_{iThn}')
+        hist_vn_proj_temp.SetDirectory(0)
+        
+        if iThn == 0:
+            hist_vn_proj = hist_vn_proj_temp.Clone('hist_vn_proj')
+            hist_vn_proj.SetDirectory(0)
+            hist_vn_proj.Reset()
             
-            if iThn == 0:
-                hist_vn_proj = hist_vn_proj_temp.Clone('hist_vn_proj')
-                hist_vn_proj.SetDirectory(0)
-                hist_vn_proj.Reset()
+        hist_vn_proj.Add(hist_vn_proj_temp)
 
-            hist_vn_proj.Add(hist_vn_proj_temp)
-
-        hist_vn_vs_mass = profile_mass_sp(hist_vn_proj, invmass_bins, resolution)
+    hist_mass_proj = thnSparse.Projection(mass_axis)
+    hist_mass_proj.Reset()
+    invmass_bins = np.array(inv_mass_bins)
+    hist_mass_proj = ROOT.TH1D('hist_mass_proj', 'hist_mass_proj', len(invmass_bins)-1, invmass_bins)
 
     if debug:
         outfile = ROOT.TFile('debug.root', 'RECREATE')
+
+    for i in range(hist_mass_proj.GetNbinsX()):
+        bin_low = hist_vn_proj.GetXaxis().FindBin(invmass_bins[i])
+        bin_high = hist_vn_proj.GetXaxis().FindBin(invmass_bins[i+1])
+        profile = hist_vn_proj.ProfileY(f'profile_{bin_low}_{bin_high}', bin_low, bin_high)
+        mean_sp = profile.GetMean()
+        mean_sp_err = profile.GetMeanError()
+        hist_mass_proj.SetBinContent(i+1, mean_sp)
+        hist_mass_proj.SetBinError(i+1, mean_sp_err)
+
+    if debug:
         hist_vn_proj.Write()
-        hist_vn_vs_mass.Write()
+        hist_mass_proj.Write()
         outfile.Close()
 
-    return hist_vn_vs_mass
+    return hist_mass_proj
+
 
 def get_vnfitter_results(vnFitter, secPeak, useRefl, useTempl):
     '''

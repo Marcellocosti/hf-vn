@@ -17,21 +17,199 @@ import yaml
 script_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(script_dir, '..', 'utils'))
 from utils import logger, get_centrality_bins, make_dir_root_file
-from corr_bkgs_brs import final_states_dplus, final_states_ds, final_states_dstar_to_d0_piplus, final_states_dstar_to_dplus_pi0, final_states_lc, final_states_xic
+from corr_bkgs_brs import final_states
+from ROOT import RooRealVar, RooDataSet, RooArgSet, RooKeysPdf, TFile, TH3F, TH1F
 
-def produce_corr_bkgs_templs(config_flow, cutset_config, correlatedCutsets):
+def get_corr_bkg(i_pt, cfg_cutset, corr_bkg_file, corr_bkg_chn, fit_range, pt_label, templ_type, output_type, sgn_d_meson='Dplus', corr_abundances=False):
+    '''
+    Get correlated background template and normalization factor
+    '''
+    input_folder = f"{pt_label}/{corr_bkg_chn}"
+    print(f"\nUsing correlated bkg file {corr_bkg_file.GetName()} for correlated bkg source {corr_bkg_chn} from folder {input_folder}\n")
+    try:
+        hist_pdg_mc_brs = corr_bkg_file.Get(f"{input_folder}/hBRs")
+    except:
+        logger(f"Could not retrieve hBRs histogram from {input_folder} in file {corr_bkg_file}", "ERROR")
+        sys.exit(1)
+    br_pdg = hist_pdg_mc_brs.GetBinContent(2)
+    br_mc = hist_pdg_mc_brs.GetBinContent(1)
+    print(f"Branching ratios: PDG = {br_pdg}, MC = {br_mc}")
+    print(f"Retrieving tree {input_folder}/{templ_type}/treeMass ...")
+    try:
+        templ_tree_mass = corr_bkg_file.Get(f"{input_folder}/{templ_type}/treeMass")
+    except:
+        logger(f"Could not retrieve treeMass from {input_folder}/{templ_type} in file {corr_bkg_file}", "ERROR")
+        sys.exit(1)
+    print(f"templ_tree_mass: {templ_tree_mass}")
+    templ_tree_mass.SetDirectory(0)
+    templ_histo_mass = corr_bkg_file.Get(f"{input_folder}/{templ_type}/hMassSmooth")
+    templ_histo_mass.SetDirectory(0)
+    full_tree = corr_bkg_file.Get(f"{input_folder}/{templ_type}/treeFracMassScoresBkgFD")
+    templ_rdataframe_full = ROOT.RDataFrame(full_tree)
+    
+    print(f"\ncfg_cutset: {cfg_cutset}\n")
+    
+    n_entries = (
+        templ_rdataframe_full.Filter(
+            f"fMlScore0 < {cfg_cutset['ScoreBkg']['max'][i_pt]} && "
+            f"fMlScore1 >= {cfg_cutset['ScoreFD']['min'][i_pt]} && "
+            f"fMlScore1 < {cfg_cutset['ScoreFD']['max'][i_pt]} && "
+            f"fM >= {fit_range[0]} && fM < {fit_range[1]}"
+        ).Count().GetValue()
+    )
 
-    with open(config_flow, 'r') as f:
-        config_flow = yaml.safe_load(f)
-    cfg_corrbkgs = config_flow["corr_bkgs"]
+    corr_abundance = 1 if not corr_abundances else final_states[corr_bkg_chn].get(f"abundance_to_{sgn_d_meson}", 1)
+    if corr_abundance != 1:
+        logger(f"Applying abundance correction factor of {corr_abundance} for correlated bkg source {corr_bkg_chn}", "WARNING")
+    frac = (br_pdg / br_mc) * n_entries * corr_abundance
+    if output_type == "hist":
+        print(f"Returning frac {frac} for correlated bkg source {corr_bkg_chn}")
+        return templ_histo_mass, frac
+    elif output_type == "tree":
+        print(f"Returning frac {frac} for correlated bkg source {corr_bkg_chn}")
+        return templ_tree_mass, frac
+    else:
+        logger(f"Output type {output_type} not recognized. Choose between 'hist' or 'tree'.", "ERROR")
+        sys.exit(1)
 
-    with open(cutset_config, 'r') as f:
-        cfg_cutset = yaml.safe_load(f)
+def fill_smooth_histo(df, histo, n_points_for_sample, n_points_for_kde):
+
+    # Define the RooDataset corresponding to histogram range
+    x_min = histo.GetXaxis().GetXmin()
+    x_max = histo.GetXaxis().GetXmax()
+    x = RooRealVar("x", "x", x_min, x_max)
+    data = RooDataSet("data", "data", RooArgSet(x))
+
+    # Fill it from DataFrame
+    for i_val, val in enumerate(df['fM']):
+        if i_val > n_points_for_kde:
+            break
+        x.setVal(val)
+        data.add(RooArgSet(x))
+
+    # Build a RooKeysPdf (kernel smoothing)
+    keys_pdf = RooKeysPdf("keys", "keys", x, data, RooKeysPdf.NoMirror)
+    generated = keys_pdf.generate(RooArgSet(x), n_points_for_sample)
+
+    histo_smooth = histo.Clone(f"{histo.GetName()}")
+    histo_smooth.Reset("ICESM")
+    for i in range(int(generated.numEntries())):
+        val = generated.get(i).getRealValue("x")
+        histo_smooth.Fill(val)
+
+    histo_smooth.Scale(len(df) / histo_smooth.Integral())
+    return histo_smooth
+
+def shift_templs(cfg_corrbkgs, cutset_sel_df, pt_min, pt_max):
+    # pt-differential mass shifts
+    
+    # Copy the dataframe to avoid modifying the original one
+    df = cutset_sel_df.copy(deep=True)
+    
+    mass_shift = 0.
+    print(f"Applying mass shift correction")
+    if isinstance(cfg_corrbkgs["shift_mass"], float):
+        print(f"Applying constant mass shift: {cfg_corrbkgs['shift_mass']}")
+        mass_shift = cfg_corrbkgs["shift_mass"]
+    else:
+        print(f"Taking mass shifts from file: {cfg_corrbkgs['shift_mass']}")
+        logger(f"Taking mass shifts from {cfg_corrbkgs['shift_mass']}", "INFO")
+        shifts_file = ROOT.TFile(cfg_corrbkgs['shift_mass'], "READ")
+        shifts_histo = shifts_file.Get("delta_mean_data_mc")
+        for i_bin in range(1, shifts_histo.GetNbinsX()+1):
+            bin_center = shifts_histo.GetBinCenter(i_bin)
+            if (bin_center > pt_min and bin_center < pt_max):
+                print(f"----> [bin_center: {bin_center}, pt_min: {pt_min}, pt_max: {pt_max}] Applying mass shift: {shifts_histo.GetBinContent(i_bin)} GeV/c^2")
+                mass_shift = shifts_histo.GetBinContent(i_bin)
+                break
+        shifts_histo.SetDirectory(0)
+        shifts_file.Close()
+
+    print(f"Shifting mass by {mass_shift} GeV/c^2")
+    df.loc[:, "fM"] = df["fM"] + mass_shift
+    return df
+
+def smear_templs(cfg_corrbkgs, cutset_sel_df, pt_min, pt_max):
+    # pt-differential mass smearing
+    mass_smear = 0.
+    # Copy the dataframe to avoid modifying the original one
+    df = cutset_sel_df.copy(deep=True)
+    
+    if isinstance(cfg_corrbkgs["smear_mass"], float):
+        sigma_smear = cfg_corrbkgs["smear_mass"]
+    else:
+        logger(f"Taking mass smears from {cfg_corrbkgs['smear_mass']}", "INFO")
+        smear_file = ROOT.TFile(cfg_corrbkgs['smear_mass'], "READ")
+        smear_histo = smear_file.Get("delta_sigma_data_mc")
+        for i_bin in range(1, smear_histo.GetNbinsX()+1):
+            bin_center = smear_histo.GetBinCenter(i_bin)
+            if (bin_center > pt_min and bin_center < pt_max):
+                sigma_smear = smear_histo.GetBinContent(i_bin)
+                print(f"----> [bin_center: {bin_center}, pt_min: {pt_min}, pt_max: {pt_max}] Applying mass smearing: {sigma_smear} GeV/c^2")
+                break
+        smear_histo.SetDirectory(0)
+        smear_file.Close()
+        if sigma_smear > 0:
+            mass_smear = np.random.normal(0.0, sigma_smear, size=len(df)).astype("float32")
+            print(f"Smearing mass by sigma = {mass_smear[:10]} GeV/c^2")
+            df.loc[:, "fM"] = df["fM"] + mass_smear
+        else:
+            logger(f"Mass smearing value is {sigma_smear}, no smearing applied.", "WARNING")
+    return df
+
+def produce_chn_corrbkg(cfg_corrbkgs, df, outfile, chn_dir, templ_type='raw'):
+
+    outfile.mkdir(f'{chn_dir}/{templ_type}')
+    outfile.cd(f'{chn_dir}/{templ_type}')
+
+    histo_mass = TH1F(f"hMass", f"hMass", 700, 1.6, 2.3)
+    treeFrac = ROOT.TTree("treeFrac", "treeFrac")
+    treeMass = ROOT.TTree("treeMass", "treeMass")
+
+    # Create branches and buffers
+    fM_mass = np.zeros(1, dtype=np.float32)
+    treeMass.Branch("fM", fM_mass, "fM/F")
+    fM_frac = np.zeros(1, dtype=np.float32)
+    treeFrac.Branch("fM", fM_frac, "fM/F")
+    fPt = np.zeros(1, dtype=np.float32)
+    treeFrac.Branch("fPt", fPt, "fPt/F")
+    fCentrality = np.zeros(1, dtype=np.float32)
+    treeFrac.Branch("fCentrality", fCentrality, "fCentrality/F")
+    fMlScore0 = np.zeros(1, dtype=np.float32)
+    treeFrac.Branch("fMlScore0", fMlScore0, "fMlScore0/F")
+    fMlScore1 = np.zeros(1, dtype=np.float32)
+    treeFrac.Branch("fMlScore1", fMlScore1, "fMlScore1/F")
+
+    for mass, score_bkg, score_fd, pt, centrality in zip(df['fM'], df['fMlScore0'], df['fMlScore1'], df['fPt'], df['fCentrality']):
+        histo_mass.Fill(mass)
+        fM_mass[0] = mass
+        fM_frac[0] = mass
+        fPt[0] = pt
+        fCentrality[0] = centrality
+        fMlScore0[0] = score_bkg
+        fMlScore1[0] = score_fd
+        treeFrac.Fill()
+        treeMass.Fill()
+    print(f"Filled histogram with entries: {histo_mass.GetEntries()}.")
+
+    histo_mass_smooth = histo_mass.Clone()
+    histo_mass_smooth.Reset('ICESM')
+    histo_mass_smooth.SetName("hMassSmooth")
+    histo_mass_smooth = fill_smooth_histo(df, histo_mass_smooth, cfg_corrbkgs['n_smooth_points'], cfg_corrbkgs['n_points_for_kde'])
+    histo_mass_smooth.Smooth(100)
+    print(f"Smoothed histogram created with entries: {histo_mass_smooth.GetEntries()}.")
+
+    histo_mass.Write('hMassRaw')
+    histo_mass_smooth.Write('hMassSmooth')
+    treeFrac.Write('treeFracMassScoresBkgFD')
+    treeMass.Write('treeMass')
+
+def produce_corr_bkgs_templs(cfg):
 
     full_dfs = []
-    tables = [[] for table in cfg_corrbkgs["table_names"]]
-    with uproot.open(cfg_corrbkgs["input_file"]) as f:
-        for table_name, table_list in zip(cfg_corrbkgs["table_names"], tables):
+    tables = [[] for table in cfg["table_names"]]
+    with uproot.open(cfg["input_file"]) as f:
+        for table_name, table_list in zip(cfg["table_names"], tables):
             for iKey, key in enumerate(f.keys()):
                 if table_name in key:
                     dfData = f[key].arrays(library='pd')
@@ -42,153 +220,63 @@ def produce_corr_bkgs_templs(config_flow, cutset_config, correlatedCutsets):
     full_df = pd.concat(full_dfs, axis=1)
 
     ### Centrality selection
-    _, (centMin, centMax) = get_centrality_bins(config_flow["centrality"])
-    full_df = full_df.query(f"fCentrality >= {centMin} and fCentrality < {centMax}")
+    _, (centMin, centMax) = get_centrality_bins(config["centrality"])
 
-    decays_info = {
-        "Dplus": {
-            "decay_table": final_states_dplus,
-            "mc_abundance": cfg_corrbkgs.get('correct_dplus_abundance', 1)
-        },
-        "Ds": {
-            "decay_table": final_states_ds,
-            "mc_abundance": cfg_corrbkgs.get('correct_ds_abundance', 1)
-        },
-        "DstarD0": {
-            "decay_table": final_states_dstar_to_d0_piplus,
-            "mc_abundance": cfg_corrbkgs.get('correct_dstar_abundance', 1)
-        },
-        "DstarDplus": {
-            "decay_table": final_states_dstar_to_dplus_pi0,
-            "mc_abundance": cfg_corrbkgs.get('correct_dstar_abundance', 1)
-        },
-        "Lc": {
-            "decay_table": final_states_lc,
-            "mc_abundance": cfg_corrbkgs.get('correct_Lc_abundance', 1)
-        },
-        "Xic": {
-            "decay_table": final_states_xic,
-            "mc_abundance": cfg_corrbkgs.get('correct_Xic_abundance', 1)
-        }
-    }
+    cent_sel_df = full_df.query(f"fCentrality >= {centMin} and fCentrality < {centMax}")
+    print(f"Initial candidates: {len(full_df)} ----> after cent and pt selection: {len(cent_sel_df)}")
 
-    ### Extract the total MC branching ratio for all species
-    total_br_mc = {}
-    for particle, info_dict in decays_info.items():
-        total_br_mc_part = 0
-        for fin_state, fin_state_info in info_dict["decay_table"].items():
-            resonant_states = fin_state_info["ResoStates"]
-            for reso_state in resonant_states:
-                total_br_mc_part += reso_state['br_mc']
-        total_br_mc[particle] = total_br_mc_part
-
-    # Process corr bkgs channels
-    final_states_to_include = cfg_corrbkgs["include_final_states"]
-    sgn_fin_state = cfg_corrbkgs['sgn_fin_state']
-    outfile = ROOT.TFile(cutset_config.replace("cutset", "corrbkg").replace(".yml", ".root"), "RECREATE")
-    for ipt_bin, (pt_min, pt_max, score_bkg_max, score_fd_min, score_fd_max) in enumerate(zip(cfg_cutset["Pt"]["min"],
-                                                                                              cfg_cutset["Pt"]["max"],
-                                                                                              cfg_cutset["score_bkg"]["max"],
-                                                                                              cfg_cutset["ScoreFD"]["min"],
-                                                                                              cfg_cutset["score_FD"]["max"])):
+    for i_pt, (pt_min, pt_max) in enumerate(config["pt_bins"]):
         pt_key = f"pt_{int(pt_min*10)}_{int(pt_max*10)}"
-        histo_weights_dict = {}
-        print(f"Processing pt bin: {pt_min} - {pt_max}")
-        mass_min = config_flow["simfit"]["MassFitRanges"][ipt_bin][0]
-        mass_max = config_flow["simfit"]["MassFitRanges"][ipt_bin][1]
-        query_str = f"fPt >= {pt_min} and fPt < {pt_max} and fM >= {mass_min} and fM < {mass_max}"
-        # query_str = f"fPt >= {pt_min} and fPt < {pt_max} and {config_flow['bkg_score_column']} < {score_bkg_max} and {config_flow['fd_score_column']} >= {score_fd_min} and {config_flow['fd_score_column']} < {score_fd_max} and fM >= {mass_min} and fM < {mass_max}"
-        cutset_sel_df = full_df.query(query_str)
+        os.makedirs(os.path.dirname(f"{cfg['outfile']}/corr_bkgs_templs_{pt_key}.root"), exist_ok=True)
+        outfile = TFile(f"{cfg['outfile']}/corr_bkgs_templs_{pt_key}.root", "RECREATE")
+        print(f"\nProcessing pt bin: {pt_min} - {pt_max}")
 
-        for particle, info_dict in decays_info.items():
-            for fin_state, fin_state_info in info_dict["decay_table"].items():
+        cent_pt_sel_df = cent_sel_df.query(f"fPt >= {pt_min} and fPt < {pt_max}")
 
-                if not fin_state.startswith(f"{sgn_fin_state}_") and not any(fin_state in name for name in final_states_to_include):
-                    continue
+        for fin_state, fin_state_info in final_states.items():
+            print(f"Processing final state: {fin_state}")
 
-                hMassChannel = ROOT.TH1F(f"hMass{fin_state}", f"hMass{fin_state}", 600, 1.6, 2.2)
-                for reso_state in fin_state_info["ResoStates"]:
-                    selected_df = cutset_sel_df.query(f"abs(fFlagMcMatchRec) == {fin_state_info['FlagFinal']} and fFlagMcDecayChanRec == {reso_state['FlagReso']}")
-                    
-                    if len(selected_df) > 0:
-                        make_dir_root_file(f"{pt_key}/{fin_state}/{reso_state['Channel']}", outfile)
-                        outfile.cd(f"{pt_key}/{fin_state}/{reso_state['Channel']}")
+            channel_df = cent_pt_sel_df.query(fin_state_info['query'])
+            if len(channel_df) <= cfg.get("min_entries", 0):
+                print(f"----> No candidates for final state: {fin_state}, skipping.")
+                continue
 
-                        # Fill tree from DataFrame
-                        hMass = ROOT.TH1F("hMass", "hMass", 600, 1.6, 2.2)
-                        tree = ROOT.TTree("DecayTree", f"DecayTree {particle} {reso_state['Channel']}")
-                        mass = array("f", [0.])
-                        tree.Branch("fM", mass, "fM/F")
+            chn_dir = f"{pt_key}/{fin_state}"
+            make_dir_root_file(chn_dir, outfile)
+            outfile.cd(chn_dir)
+            hBRs = ROOT.TH1F("hBRs", "hBRs;Branching Ratio", 2, 0, 2)
+            hBRs.GetXaxis().SetBinLabel(1, "MC")
+            br_mc = fin_state_info[f'br_sim_{cfg["coll_system"]}']
+            hBRs.SetBinContent(1, br_mc)
+            hBRs.GetXaxis().SetBinLabel(2, "PDG")
+            br_pdg = fin_state_info['br_pdg']
+            hBRs.SetBinContent(2, br_pdg)
+            hBRs.Write()
 
-                        mass_values = selected_df["fM"].to_numpy(dtype="float32")
-                        for val in mass_values:
-                            mass[0] = val
-                            tree.Fill()
+            produce_chn_corrbkg(cfg, channel_df, outfile, chn_dir, templ_type='raw')
 
-                        tree.Draw("fM >> hMass", "", "goff")
-                        hMass.Smooth(100)
-                        hMass.Write()
-                        hBRs = ROOT.TH1F("hBRs", "hBRs;Branching Ratio", 4, 0, 4)
-                        hBRs.GetXaxis().SetBinLabel(1, "MC")
-                        br_mc = info_dict["mc_abundance"] * (reso_state['br_mc'] / total_br_mc[particle])
-                        hBRs.SetBinContent(1, br_mc)
-                        hBRs.GetXaxis().SetBinLabel(2, "PDG")
-                        br_pdg = reso_state['br_pdg']
-                        hBRs.SetBinContent(2, br_pdg)
-                        hBRs.GetXaxis().SetBinLabel(3, "Raw yield")
-                        raw_yield = tree.GetEntries()
-                        hBRs.SetBinContent(3, raw_yield)
-                        hBRs.GetXaxis().SetBinLabel(4, "RY * (PDG/MC)")
-                        hBRs.SetBinContent(4, raw_yield * (br_pdg/br_mc))
-                        hBRs.Write()
-                        histo_weights_dict[f"{fin_state}_{reso_state['Channel']}"] = [raw_yield * (br_pdg/br_mc), hMass]
+            if cfg.get('smear_mass'):
+                channel_df_smear = smear_templs(cfg, channel_df, pt_min, pt_max)
+                produce_chn_corrbkg(cfg, channel_df_smear, outfile, chn_dir, templ_type='smear')
+            if cfg.get('shift_mass'):
+                channel_df_shift = shift_templs(cfg, channel_df, pt_min, pt_max)
+                produce_chn_corrbkg(cfg, channel_df_shift, outfile, chn_dir, templ_type='shift')
+            if cfg.get('smear_mass') and cfg.get('shift_mass'):
+                channel_df_smear = smear_templs(cfg, channel_df, pt_min, pt_max)
+                channel_df_shift_smear = shift_templs(cfg, channel_df_smear, pt_min, pt_max)
+                produce_chn_corrbkg(cfg, channel_df_shift_smear, outfile, chn_dir, templ_type='shift_smear')
 
-        n_final_states = len(histo_weights_dict)
-
-        hMassTotalSignal = ROOT.TH1F("hMassTotalSignal", "hMassTotalSignal", 600, 1.6, 2.2)
-        hMassTotalCorrBkgs = ROOT.TH1F("hMassTotalCorrBkgs", "hMassTotalCorrBkgs", 600, 1.6, 2.2)
-        hWeightsAnchorSignal = ROOT.TH1F("hWeightsAnchorSignal", "hWeightsAnchorSignal", n_final_states+1, 0, n_final_states+1)
-        hWeightsAnchorToFirst = ROOT.TH1F("hWeightsAnchorToFirst", "hWeightsAnchorToFirst", n_final_states+1, 0, n_final_states+1)
-        total_signal_weight = 0
-        i_final_state = 1
-        for name, (weight, histo) in histo_weights_dict.items():
-            if name.startswith(f"{sgn_fin_state}_"):
-                hMassTotalSignal.Add(histo, weight)
-                total_signal_weight += weight
-            else:
-                if i_final_state == 1:
-                    weight_first_template = weight
-                hMassTotalCorrBkgs.Add(histo, weight)
-                hWeightsAnchorSignal.GetXaxis().SetBinLabel(i_final_state, name)
-                hWeightsAnchorSignal.SetBinContent(i_final_state, weight)
-                hWeightsAnchorToFirst.GetXaxis().SetBinLabel(i_final_state, name)
-                hWeightsAnchorToFirst.SetBinContent(i_final_state, weight)
-                i_final_state += 1
-
-        # Normalize weights histogram to the total signal weight
-        hWeightsAnchorSignal.Scale(1 / total_signal_weight)
-        hWeightsAnchorToFirst.Scale(1 / weight_first_template)
-
-        outfile.cd(pt_key)
-        hMassTotalSignal.Write()
-        hMassTotalCorrBkgs.Write()
-        hWeightsAnchorSignal.Write()
-        hWeightsAnchorToFirst.Write()
-
-    outfile.Close()
+        outfile.Close()
+        print(f"\nOutput file with correlated backgrounds templates: {cfg['outfile']}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Arguments')
-    parser.add_argument("flow_config", metavar="text",
-                        default="config_flow.yaml", help="flow configuration file")
-    parser.add_argument("cutset_config", metavar="text",
-                        default="cfg_cutset.yaml", help="flow configuration file")
-    parser.add_argument('--correlated', '-corr', action='store_true',
-                        help="perform correlated analysis")
+    parser.add_argument("config", metavar="text",
+                        default="config.yaml", help="flow configuration file")
     args = parser.parse_args()
 
-    produce_corr_bkgs_templs(
-        args.flow_config,
-        args.cutset_config,
-        args.correlated
-    )
+    with open(args.config, 'r') as f:
+        config = yaml.safe_load(f)
+
+    logger("Producing correlated backgrounds templates", "INFO")
+    produce_corr_bkgs_templs(config)

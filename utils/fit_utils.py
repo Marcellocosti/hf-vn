@@ -2,7 +2,7 @@
 Module with function definitions and fit utils
 '''
 
-from ROOT import TMath, TF1, kBlue, kGreen, TDatabasePDG, TH1D # pylint: disable=import-error,no-name-in-module
+from ROOT import TMath, TF1, TH1F, kBlue, kGreen, TDatabasePDG, TH1D # pylint: disable=import-error,no-name-in-module
 
 def SingleGaus(x, par):
     '''
@@ -388,3 +388,257 @@ def RebinHisto(h_orig, reb, first_use = 0):
         hRebin.SetBinError(iBin, TMath.Sqrt(sume2))
     
     return hRebin
+
+def get_tree(input_file, tables, query_signal=None):
+    """
+    Helper function to get correlated backgrounds tree from file
+    """
+
+    print(f"Opening file {input_file} to get correlated backgrounds trees {tables}")
+    dfs_list = [[] for _ in range(len(tables))]
+    with uproot.open(input_file) as f:
+        for key in f.keys():
+            for i_table, table in enumerate(tables):
+                if table in key:
+                    dfs_list[i_table].append(f[key].arrays(library="pd"))
+
+    merged_single_dfs = []
+    for df in dfs_list:
+        merged_single_dfs.append(pd.concat([single_df for single_df in df], ignore_index=True))
+    full_df = pd.concat(merged_single_dfs, axis=0)
+
+    if query_signal:
+        print(f"Applying query to select signal: {query_signal}")
+        full_df = full_df.query(query_signal)
+
+    print(f"Full tree with {len(full_df)} entries, columns\n: {full_df.columns.to_list()}")
+    return full_df
+
+def get_histo(input_file, sparse_dicts, cfg, pt_bin_fit_cfg):
+    """
+    Helper function to get histogram from file
+    """
+
+    if cfg['data_type'] == "DplusTask":
+        if cfg["is_data"]:
+            sparse = input_file.Get("hf-task-dplus/hSparseMass")
+            dict_entry = "Data"
+        else:
+            sparse = input_file.Get("hf-task-dplus/hSparseMassPrompt")
+            dict_entry = "RecoPrompt"
+        
+        # Apply selections
+        print(f"\n\nsparse_dicts: {sparse_dicts}\n\n")
+        sparse.GetAxis(sparse_dicts[dict_entry]['Pt']).SetRangeUser(pt_bin_fit_cfg['pt_range'][0], pt_bin_fit_cfg['pt_range'][1])
+        if pt_bin_fit_cfg.get('score_bkg_max') and cfg.get('correlated_bkgs'):
+            if cfg['correlated_bkgs'].get('apply_ml_score_sel'):
+                sparse.GetAxis(sparse_dicts[dict_entry]['score_bkg']).SetRangeUser(0, pt_bin_fit_cfg['score_bkg_max'])
+        histo = sparse.Projection(0)
+
+    return histo
+
+def get_data_model_dicts(config, data_type="DplusTask"):
+    
+    axes_dict = {}
+    if data_type == "DplusTask":
+        ### Data
+        axes_dict['Data'] = {
+            'Mass': 0,
+            'Pt': 1,
+            'score_bkg': 2,
+            'score_fd': 4,
+            'cent': 5
+        }
+
+        ### MC
+        axes_dict['RecoPrompt'] = {
+            'Mass': 0,
+            'Pt': 1,
+            'score_bkg': 2,
+            'score_prompt': 3,
+            'score_fd': 4,
+            'cent': 5,
+            'occ': 6,
+        }
+        axes_dict['RecoFD'] = {
+            'Mass': 0,
+            'Pt': 1,
+            'score_bkg': 2,
+            'score_prompt': 3,
+            'score_fd': 4,
+            'cent': 5,
+            'occ': 6,
+            'pt_bmoth': 7,
+            'flag_bhad': 8,
+        }
+        axes_dict['GenPrompt'] = {
+            'Pt': 0,
+            'y': 1,
+            'cent': 2,
+            'occ': 3
+        }
+        axes_dict['GenFD'] = {
+            'Pt': 0,
+            'y': 1,
+            'cent': 2,
+            'occ': 3,
+            'pt_bmoth': 4,
+            'flag_bhad': 5,
+        }
+
+    elif data_type == "DsTask":
+        ### Data
+        axes_dict['Data'] = {
+            'Mass': 0,
+            'Pt': 1,
+            'cent': 2,
+            'score_bkg': 3,
+            'score_fd': 5
+        }
+
+        ### MC
+        axes_dict['RecoPrompt'] = {
+        }
+        axes_dict['RecoFD'] = {
+        }
+        axes_dict['GenPrompt'] = {
+        }
+        axes_dict['GenFD'] = {
+        }
+
+    elif data_type == "DplusCorrelator":
+        axes_dict["Data"] = {
+            'Mass': 'fMD',
+            'Pt': 'fPtD',
+            'score_bkg': 'fMlScoreBkg',
+            'score_prompt': 'fMlScorePrompt',
+            'score_fd': 'fMlScoreNonPrompt'
+        }
+
+    elif data_type == "DplusTree":
+        print(f"Getting data model dicts for data_type: {data_type}")
+        axes_dict["Data"] = {
+            'Mass': 'fM',
+            'Pt': 'fPt',
+            'cent': 'fCentrality',
+            'score_bkg': 'fMlScore0',
+            'score_prompt': 'fMlScorePrompt',
+            'score_fd': 'fMlScore1'
+        }
+
+        ### MC
+        axes_dict['RecoPrompt'] = {
+            'Mass': 'fM',
+            'Pt': 'fPt',
+            'cent': 'fCentrality',
+            'score_bkg': 'fMlScore0',
+            'score_prompt': 'fMlScorePrompt',
+            'score_fd': 'fMlScore1'
+        }
+        axes_dict['RecoFD'] = {
+            'Mass': 'fM',
+            'Pt': 'fPt',
+            'cent': 'fCentrality',
+            'score_bkg': 'fMlScore0',
+            'score_prompt': 'fMlScorePrompt',
+            'score_fd': 'fMlScore1'
+        }
+        axes_dict['GenPrompt'] = {
+            'Mass': 'fM',
+            'Pt': 'fPt',
+            'cent': 'fCentrality'
+        }
+        axes_dict['GenFD'] = {
+            'Mass': 'fM',
+            'Pt': 'fPt',
+            'cent': 'fCentrality',
+        }
+        
+    elif data_type == "PreprocessedTree":
+        axes_dict["Data"] = {
+            'Mass': 'fM',
+            'Pt': 'fPt',
+            'cent': 'fCentrality',
+            'score_bkg': 'fMlScore0',
+            'score_prompt': 'fMlScorePrompt',
+            'score_fd': 'fMlScore1'
+        }
+        ### MC
+        axes_dict['RecoPrompt'] = {
+            'Mass': 'fM',
+            'Pt': 'fPt',
+            'cent': 'fCentrality',
+            'score_bkg': 'fMlScore0',
+            'score_prompt': 'fMlScorePrompt',
+            'score_fd': 'fMlScore1'
+        }
+        axes_dict['RecoFD'] = {
+            'Mass': 'fM',
+            'Pt': 'fPt',
+            'cent': 'fCentrality',
+            'score_bkg': 'fMlScore0',
+            'score_prompt': 'fMlScorePrompt',
+            'score_fd': 'fMlScore1'
+        }
+        axes_dict['GenPrompt'] = {
+            'Pt': 'Pt',
+            'cent': 'Centrality'
+        }
+        axes_dict['GenFD'] = {
+            'Pt': 'Pt',
+            'cent': 'Centrality'
+        }
+    else:
+        logger(f"Data model for data_type {data_type} not implemented yet.", level='FATAL')
+
+    print(f"\n\nData model dicts for data_type {data_type}: {axes_dict}")
+    return axes_dict
+
+def get_signal_pars_dict(sgn_func, pt_limits):
+    """
+    Helper function to get signal pars dict
+    """
+    signal_pars_dict = {}
+    if sgn_func == ["gaussian"]:
+        signal_pars = ['rawyield', 'mu', 'sigma']
+    elif sgn_func == ["doublegaus"]:
+        signal_pars = ['rawyield', 'mu', 'sigma1', 'sigma2']
+    elif sgn_func == ["doublecbsymm"]:
+        signal_pars = ['rawyield', 'mu', 'sigma', 'alpha', 'n']
+    elif sgn_func == ["doublecb"]:
+        signal_pars = ['rawyield', 'mu', 'sigma', 'alphal', 'nl', 'alphar', 'nr']
+    elif sgn_func == ["doublecb", "doublecb"]:
+        signal_pars = ['rawyield1', 'mu1', 'sigma1', 'alphal1', 'nl1', 'alphar1', 'nr1',
+                       'rawyield2', 'mu2', 'sigma2', 'alphal2', 'nl2', 'alphar2', 'nr2']
+    elif sgn_func == ["genergausexptailsymm"]:
+        signal_pars = ['rawyield', 'mu', 'sigma', 'alpha']
+    elif sgn_func == ["genergausexptail"]:
+        signal_pars = ['rawyield', 'mu', 'sigmal', 'alphal', 'sigmar', 'alphar']
+    elif sgn_func == ["bifurgaus"]:
+        signal_pars = ['rawyield', 'mu', 'sigmal', 'alphal']
+    elif sgn_func == ["cauchy"]:
+        signal_pars = ['rawyield', 'mu', 'gamma']
+    elif sgn_func == ["voigtian"]:
+        signal_pars = ['rawyield', 'mu', 'sigma', 'gamma']
+    else:
+        raise ValueError(f"Signal function '{sgn_func}' not recognized.")
+
+    for par in signal_pars:
+        signal_pars_dict[par] = TH1F(f"hist_{par}", f";#it{{p}}_{{T}} (GeV/#it{{c}}); {par}",
+                                     len(pt_limits)-1, pt_limits)
+    return signal_pars_dict
+
+def convert_flarefly_par_name(par_name):
+    """
+    Helper function to convert flarefly parameter names to common names
+    """
+    name_map = {
+        'rawyield': None,
+        'mu': 'Mean',
+        'sigma': 'Sigma',
+        'alphal': 'Alpha1',
+        'nl': 'N1',
+        'alphar': 'Alpha2',
+        'nr': 'N2',
+    }
+    return name_map[par_name]

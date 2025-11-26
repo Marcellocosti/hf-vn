@@ -57,6 +57,7 @@ def get_inputs(file, full_cfg, sparse_cfg, debug=False):
     print(f"Loading data sparse {sparse_cfg['path']} from file {file.GetName()}")
     axes = get_sparse_dict(sparse_cfg['name'], full_cfg['Dmeson'])
     sparse = file.Get(sparse_cfg['path'])
+    logger(f"Sparse {sparse} loaded from {sparse_cfg['path']}", level='WARNING')
     if full_cfg['Dmeson'] == 'Dzero':
         # TODO: safety checks for Dmeson reflecton and secondary peak
         if sparse_cfg['name'] == "RecoPrompt":
@@ -116,9 +117,10 @@ def process_sparse(i_file, infile, full_cfg, sparse_cfg, prep_out_dir, input_out
     axes_to_keep, rebin = sparse_cfg["axes"]['names'], sparse_cfg["axes"]['rebin']
     sparse_type, sparse_path = sparse_cfg['name'], sparse_cfg['path']
     sparse_dir, sparse_name = sparse_path.split('/')[0], sparse_path.split('/')[1]
+    print(f"sparse_type: {sparse_type}, sparse_path: {sparse_path}, sparse_dir: {sparse_dir}, sparse_name: {sparse_name}")
 
     for pt_min, pt_max, bkg_max in zip(pt_mins, pt_maxs, bkg_maxs):
-
+        print(f"Processing pT bin {pt_min} - {pt_max} with bkg max {bkg_max} ...")
         # Create output file
         out_file_dir = f"{prep_out_dir}/preprocess/{int(pt_min*10)}_{int(pt_max*10)}/{input_out_dir}"
         os.makedirs(out_file_dir, exist_ok=True)
@@ -134,29 +136,18 @@ def process_sparse(i_file, infile, full_cfg, sparse_cfg, prep_out_dir, input_out
         proj_sparse = proj_sparse.Rebin(array.array('i', rebin))
         make_dir_root_file(sparse_type, out_file)
         out_file.cd(sparse_type)
-        proj_sparse.Write(sparse_name, write_opt)
-        out_file.Delete(sparse_name + ";*")
+        proj_sparse.Write(f"hSparse{sparse_type}", write_opt)
+        out_file.Delete(f"hSparse{sparse_type}" + ";*")
         proj_sparse.Delete()
         del proj_sparse
 
-        if sparse_cfg.get('resolution') is not None:
-            logger(f"Loading resolution from {sparse_cfg['resolution']}", level='INFO')
-            reso_file = TFile.Open(sparse_cfg["resolution"], 'r')
-            det_A = full_cfg.get('detA', 'FT0c')
-            det_B = full_cfg.get('detB', 'FV0a')
-            det_C = full_cfg.get('detC', 'TPCtot')
-            resolution = reso_file.Get(f'{det_A}_{det_B}_{det_C}/histo_reso_delta_cent')
-            resolution.SetDirectory(0)
-            reso_file.Close()
-            resolution.Write()
         gc.collect()
 
         out_file.Close()
-        logger(f'   Finished processing pT bin {pt_min} - {pt_max} for {i_file}, {file_path}, sparse: {sparse_cfg["name"]}\n\n')
+        logger(f'----> Finished processing pT bin {pt_min} - {pt_max} for {i_file}, sparse: {sparse_cfg["name"]}\n', "INFO")
 
     del sparse
     gc.collect()
-    infile.Close()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Arguments")
@@ -173,7 +164,26 @@ if __name__ == "__main__":
         logger(f"##### Skimming {input_cfg['outdir']} #####")
         files = [TFile.Open(fp, 'r') for fp in input_cfg['files']]
         for sparse_cfg in input_cfg['sparses']:
+            print(f"output_dir: {output_dir}")
+            print(f"input_cfg['outdir']: {input_cfg['outdir']}")
             with concurrent.futures.ThreadPoolExecutor(full_cfg['preprocess']['workers']) as executor:
-                tasks_data = [executor.submit(process_sparse, i_file, file, full_cfg, sparse_cfg, output_dir, input_cfg['outdir']) for i_file, file in enumerate(files)]
+                tasks_data = [executor.submit(process_sparse, i_file, file, full_cfg, sparse_cfg, output_dir, f"{input_cfg['outdir']}/jobs") for i_file, file in enumerate(files)]
         [TFile.Close(file) for file in files]
+
+        # use hadd to merge the results in the directories for the different pT bins
+        for directory in os.listdir(f"{output_dir}/preprocess/"):
+            prep_dir = f"{output_dir}/preprocess/{directory}/{input_cfg['outdir']}"
+            files_to_merge = [f"./jobs/{file}" for file in os.listdir(f"{prep_dir}/jobs") if file.startswith("AnalysisResults_") and file.endswith(".root")]
+            files_to_merge_str = ' '.join(files_to_merge)
+            merged_file = f"{prep_dir}/AnalysisResults_pt_{directory}.root"
+            log_merge = f"{prep_dir}/log_merge.txt"
+            hadd = f"hadd -f {merged_file} {files_to_merge_str} > {log_merge}"
+            logger(f"\n\nRunning command: {hadd}", "INFO")
+            try:
+                os.system(f"cd {prep_dir} && {hadd}")
+            except Exception as e:
+                logger(f"Error while creating hadd command: {e}", "ERROR")
+                os.system(f"rm {merged_file}") # Remove the partiall merged file
+                os.system(f"mv {log_merge} {prep_dir}/log_merge_error.txt")
+
         logger(f"Finished processing {input_cfg['outdir']}\n\n")

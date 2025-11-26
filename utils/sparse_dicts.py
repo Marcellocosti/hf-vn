@@ -157,43 +157,48 @@ def get_sparse_dict(sparse_name, dmeson, beforeDMesonPR=False):
 def get_pt_preprocessed_sparses(config, iPt):
 
     logger("Loading preprocessed sparses", level='INFO')
-    sparses_data, sparses_reco, sparses_gen, axes, resolutions = {}, {}, {}, {}, {}
+    sparses_data, sparses_reco, sparses_gen, axes = {}, {}, {}, {}
     pre_cfg = config['preprocess']
 
     # Find preprocess config of sparse with name "FlowSP" (this is the one to be projected)
-    for sparse_cfg in pre_cfg['sparses_data']:
-        if sparse_cfg['name'] == 'FlowSP':
-            sparse_proj_cfg = sparse_cfg
-            break
+    for input_cfg in pre_cfg['inputs']:
+        for sparse_cfg in input_cfg['sparses']:
+            if sparse_cfg['name'] == 'FlowSP':
+                sparse_proj_cfg = sparse_cfg
+                break
+
     print(f"\n\naxes: {axes}")
     ptmin = config["ptbins"][iPt]
     ptmax = config["ptbins"][iPt+1]
-
-    if config.get("outdirPrep") and config["outdirPrep"] != "":
-        infileprep = TFile(f"{config['outdirPrep']}/preprocess/{int(ptmin*10)}_{int(ptmax*10)}/AnalysisResults.root")
-    else:
-        infileprep = TFile(f"{config['outdir']}/preprocess/{int(ptmin*10)}_{int(ptmax*10)}/AnalysisResults.root")
-
+    pt_str = f"{int(ptmin*10)}_{int(ptmax*10)}"
+    prep_dir = config.get("outdirPrep", config["outdir"])
     if config["operations"].get("proj_data"):
-        inputs_dir = f"Data_FlowSP/hf-task-flow-charm-hadrons"
-        sparse_data_name = f"Data_{sparse_proj_cfg['name']}/{sparse_proj_cfg['path']}"
-        axes['Flow'] = {ax: iax for iax, ax in enumerate(sparse_proj_cfg['axes']['names'])}
-        sparses_data[sparse_proj_cfg['name']] = infileprep.Get(sparse_data_name)
-        resolutions[f'Reso_{sparse_proj_cfg["name"]}'] = infileprep.Get(f'{inputs_dir}/histo_reso_delta_cent')
+        infile_prep_data = TFile.Open(f"{prep_dir}/preprocess/{pt_str}/FlowSP/AnalysisResults_pt_{pt_str}.root", "read")
+        print(f"Reading data sparse from: {prep_dir}/preprocess/{pt_str}/FlowSP/AnalysisResults_pt_{pt_str}.root")
+        axes['FlowSP'] = {ax: iax for iax, ax in enumerate(sparse_proj_cfg['axes']['names'])}
+        sparses_data["FlowSP"] = infile_prep_data.Get("FlowSP/hSparseFlowSP")
+        infile_prep_data.Close()
 
     if config["operations"].get("proj_mc"):
-        subdir = infileprep.Get("MC/Reco")
-        for key in subdir.GetListOfKeys():
-            obj = key.ReadObj()
-            sparses_reco[key.GetName()[1:]] = obj
-            axes[key.GetName()[1:]] = {ax: iax for iax, ax in enumerate(pre_cfg['axes_reco'].keys())}
+        infile_prep_mc = TFile.Open(f"{prep_dir}/preprocess/{pt_str}/MC/AnalysisResults_pt_{pt_str}.root", "read")
+        # subdir = infile_prep_mc.Get("MC")
+        # print(f"MC subdir: {subdir}")
+        for key in infile_prep_mc.GetListOfKeys():
+            key_name = key.GetName()
+            print(f"Key in MC subdir: {key_name}")
+            if "Reco" in key_name:
+                sparses_reco[key_name] = infile_prep_mc.Get(f"{key_name}/hSparse{key_name}")
+            elif "Gen" in key_name:
+                sparses_gen[key_name] = infile_prep_mc.Get(f"{key_name}/hSparse{key_name}")
+            else:
+                logger(f"Unknown sparse type in MC folder: {key_name}", level='ERROR')
+            # Retrieve axes
+            for input_cfg in pre_cfg['inputs']:
+                for sparse_cfg in input_cfg['sparses']:
+                    if sparse_cfg['name'] == key_name:
+                        sparse_proj_cfg = sparse_cfg
+                        break
+            axes[key_name] = {ax: iax for iax, ax in enumerate(sparse_proj_cfg['axes']['names'])}
+        infile_prep_mc.Close()
 
-        subdir = infileprep.Get("MC/Gen")
-        for key in subdir.GetListOfKeys():
-            obj = key.ReadObj()
-            sparses_gen[key.GetName()[1:]] = obj
-            axes[key.GetName()[1:]] = {ax: iax for iax, ax in enumerate(pre_cfg['axes_gen'].keys())}
-
-    infileprep.Close()
-
-    return sparses_data, sparses_reco, sparses_gen, axes, resolutions
+    return sparses_data, sparses_reco, sparses_gen, axes

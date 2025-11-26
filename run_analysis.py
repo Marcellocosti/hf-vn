@@ -13,7 +13,6 @@ from utils import check_dir, logger
 paths = {
 	"Preprocess": os.path.join(work_dir, "./src/pre_process.py"),
 	"YamlCuts": os.path.join(work_dir, "./src/make_cutsets_cfgs.py"),
-	"CorrBkgs": os.path.join(work_dir, "./src/correlated_bkgs.py"),
 	"Projections": os.path.join(work_dir, "./src/proj_thn.py"),
 	"Efficiencies": os.path.join(work_dir, "./src/compute_efficiencies.py"),
 	"GetVnVsMass": os.path.join(work_dir, "./src/get_vn_vs_mass.py"),
@@ -33,26 +32,6 @@ def make_yaml(flow_config, outdir, correlated=False):
 
 	logger(f"{cmd}", level="COMMAND")
 	os.system(cmd)
-
-def produce_corr_bkgs_templs(flow_config, outdir, correlated, nworkers, mCutSets):
-	logger("Correlated backgrounds will be evaluated", level="INFO")
-	os.makedirs(f"{outdir}/corrbkgs", exist_ok=True)
-
-	method = "--correlated" if correlated else ""
-	def run_corr_bkgs(i):
-		"""Run sparse projection for a given cutset index."""
-		iCutSets = f"{i:02d}"
-		logger(f"Processing cutset {iCutSets}...", level="INFO")
-
-		config_cutset = f"{outdir}/cutsets/cutset_{iCutSets}.yml"
-		cmd = (
-			f"python3 {paths['CorrBkgs']} {flow_config} {config_cutset} {method}"
-		)
-		logger(f"{cmd}", level="COMMAND")
-		os.system(cmd)
-
-	with concurrent.futures.ThreadPoolExecutor(max_workers=nworkers) as executor:
-		results_corr_bkgs = list(executor.map(run_corr_bkgs, range(mCutSets)))
 
 def project(flow_config, outdir, nworkers, mCutSets):
 	logger("Projections will be performed", level="INFO")
@@ -210,13 +189,6 @@ def run_correlated_cut_variation(flow_config, operations, nworkers, outdir):
 	logger(f"mCutSets: {mCutSets}", level="INFO")
 
 	#___________________________________________________________________________________________________________________________
-	# Correlated bkgs templates
-	if operations.get('produce_corr_bkgs_templs', False):
-		produce_corr_bkgs_templs(flow_config, outdir, True, nworkers, mCutSets)
-	else:
-		logger("Correlated bkgs will not be included", level="WARNING")
-
-	#___________________________________________________________________________________________________________________________
 	# Projection for MC and apply the ptweights
 	if operations.get('proj_mc', False) or operations.get('proj_data', False):
 		project(flow_config, outdir, nworkers, mCutSets)
@@ -269,13 +241,6 @@ def run_combined_cut_variation(flow_config, operations, nworkers, outdir):
 
 	mCutSets = len([f for f in os.listdir(f"{outdir}/cutsets") if os.path.isfile(os.path.join(f"{outdir}/cutsets", f))])
 	logger(f"mCutSets: {mCutSets}", level="INFO")
-
-	#___________________________________________________________________________________________________________________________
-	# Correlated bkgs templates
-	if operations.get('produce_corr_bkgs_templs', False):
-		produce_corr_bkgs_templs(flow_config, outdir, False, nworkers, mCutSets)
-	else:
-		logger("Correlated bkgs will not be included", level="WARNING")
 
 	#___________________________________________________________________________________________________________________________
 	# Projection for MC and apply the ptweights

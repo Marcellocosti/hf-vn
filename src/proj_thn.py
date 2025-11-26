@@ -69,95 +69,81 @@ def proj_multitrial(config, multitrial_folder):
     with ThreadPoolExecutor(max_workers=8) as executor:
         executor.map(partial(process_cutset, default_histos=default_histos), multitrial_dirs)
 
-def proj_data(sparses_dict, reso_dict, axes, inv_mass_bins, proj_scores, writeopt):
+def proj_data(i_bin, sparse, axes, resolution, proj_cfg, writeopt):
 
-    proj_vars = ['Mass', 'Sp', 'ScoreFD', 'ScoreBkg'] if proj_scores else ['Mass', 'Sp']
-    proj_axes = [axes['Flow'][var] for var in proj_vars]
-
-    for reso_name, reso in reso_dict.items():
-        reso.Write(f'hResolution_{reso_name}', writeopt)
+    proj_vars = ['Mass', 'Sp', 'ScoreFD', 'ScoreBkg'] if proj_cfg.get('storeML') else ['Mass', 'Sp']
+    proj_axes = [axes['FlowSP'][var] for var in proj_vars]
 
     for var, ax in zip(proj_vars, proj_axes):
-        for isparse, (_, sparse) in enumerate(sparses_dict.items()):
-            hist_var_temp = sparse.Projection(ax)
-            hist_var_temp.SetName(f'h{var.capitalize()}_{isparse}')
-            if isparse == 0:
-                hist_var = hist_var_temp.Clone(f'h{var.capitalize()}')
-                hist_var.Reset()
-
-            hist_var.Add(hist_var_temp)
-
+        hist_var = sparse.Projection(ax)
         hist_var.Write(f'h{var.capitalize()}Data', writeopt)
 
-    hist_vn_sp = get_vn_versus_mass(sparses_dict, reso_dict, inv_mass_bins, axes['Flow']['Mass'], axes['Flow']['Sp'])
+    # for var, ax in zip(proj_vars, proj_axes):
+    #     for isparse, (_, sparse) in enumerate(sparses_dict.items()):
+    #         hist_var_temp = sparse.Projection(ax)
+    #         hist_var_temp.SetName(f'h{var.capitalize()}_{isparse}')
+    #         if isparse == 0:
+    #             hist_var = hist_var_temp.Clone(f'h{var.capitalize()}')
+    #             hist_var.Reset()
+
+    #         hist_var.Add(hist_var_temp)
+
+    #     hist_var.Write(f'h{var.capitalize()}Data', writeopt)
+
+    hist_vn_sp = get_vn_versus_mass(sparse, proj_cfg['inv_mass_bins'][i_bin], axes['FlowSP']['Mass'], axes['FlowSP']['Sp'])
+    hist_vn_sp.Scale(1/resolution) # Correct for resolution
     hist_vn_sp.Write('hVnVsMassData', writeopt)
 
     # Save a TH2 of (Mass, Sp) for the multitrial systematic
     mass_lowest_bin, mass_highest_bin, sp_lowest_bin, sp_highest_bin = -1, 1e10, -1, 1e10
-    for isparse, (_, sparse) in enumerate(sparses_dict.items()):
-        hist_mass_sp_temp = sparse.Projection(axes['Flow']['Sp'], axes['Flow']['Mass'])
-        hist_mass_sp_temp.SetName(f'hMassSp_{isparse}')
-        if isparse == 0:
-            hist_mass_sp = hist_mass_sp_temp.Clone(f'hMassSp')
-            hist_mass_sp.Reset()
-            sp_lowest_bin = hist_mass_sp_temp.ProjectionY().FindFirstBinAbove(0)
-            sp_highest_bin = hist_mass_sp_temp.ProjectionY().FindLastBinAbove(0)
-            mass_lowest_bin = hist_mass_sp_temp.ProjectionX().FindFirstBinAbove(0)
-            mass_highest_bin = hist_mass_sp_temp.ProjectionX().FindLastBinAbove(0)
-        else:
-            if hist_mass_sp_temp.ProjectionY().FindFirstBinAbove(0) < sp_lowest_bin:
-                sp_lowest_bin = hist_mass_sp_temp.ProjectionY().FindFirstBinAbove(0)
-            if hist_mass_sp_temp.ProjectionY().FindLastBinAbove(0) > sp_highest_bin:
-                sp_highest_bin = hist_mass_sp_temp.ProjectionY().FindLastBinAbove(0)
-            if hist_mass_sp_temp.ProjectionX().FindFirstBinAbove(0) < mass_lowest_bin:
-                mass_lowest_bin = hist_mass_sp_temp.ProjectionX().FindFirstBinAbove(0)
-            if hist_mass_sp_temp.ProjectionX().FindLastBinAbove(0) > mass_highest_bin:
-                mass_highest_bin = hist_mass_sp_temp.ProjectionX().FindLastBinAbove(0)
-
-        hist_mass_sp.Add(hist_mass_sp_temp)
-
+    # for isparse, (_, sparse) in enumerate(sparses_dict.items()):
+    hist_mass_sp = sparse.Projection(axes['FlowSP']['Sp'], axes['FlowSP']['Mass'])
+    sp_lowest_bin = hist_mass_sp.ProjectionY().FindFirstBinAbove(0)
+    sp_highest_bin = hist_mass_sp.ProjectionY().FindLastBinAbove(0)
+    mass_lowest_bin = hist_mass_sp.ProjectionX().FindFirstBinAbove(0)
+    mass_highest_bin = hist_mass_sp.ProjectionX().FindLastBinAbove(0)
     hist_mass_sp.GetXaxis().SetRange(mass_lowest_bin, mass_highest_bin)
     hist_mass_sp.GetYaxis().SetRange(sp_lowest_bin, sp_highest_bin)
     hist_mass_sp.Write(f'hMassSpData', writeopt)
 
-def proj_mc_reco(sparsesReco, sPtWeightsD, sPtWeightsB, Bspeciesweights, writeopt):
+def proj_mc_reco(sparses_reco, sPtWeightsD, sPtWeightsB, Bspeciesweights, writeopt):
 
-    for key, sparse in sparsesReco.items():
+    for key, sparse in sparses_reco.items():
         if key != 'RecoPrompt' and key != 'RecoFD':
             sparse.Projection(axes[key]['Mass']).Write(f'h{key}Mass')
             sparse.Projection(axes[key]['Pt']).Write(f'h{key}Pt')
 
-    hMassPrompt = sparsesReco['RecoPrompt'].Projection(axes['RecoPrompt']['Mass'])
+    hMassPrompt = sparses_reco['RecoPrompt'].Projection(axes['RecoPrompt']['Mass'])
     hMassPrompt.SetName(f'hPromptMass_{ptMin}_{ptMax}')
-    hMassFD = sparsesReco['RecoFD'].Projection(axes['RecoFD']['Mass'])
+    hMassFD = sparses_reco['RecoFD'].Projection(axes['RecoFD']['Mass'])
     hMassFD.SetName(f'hFDMass_{ptMin}_{ptMax}')
 
     ### project pt prompt
-    hPtPrompt = sparsesReco['RecoPrompt'].Projection(axes['RecoPrompt']['Pt'])
+    hPtPrompt = sparses_reco['RecoPrompt'].Projection(axes['RecoPrompt']['Pt'])
     if sPtWeightsD:
         hPtPrompt = reweight_histo_1D(hPtPrompt, sPtWeightsD, binned=False)
 
     ### project pt FD
     if sPtWeightsD:
-        hPtFD = reweight_histo_1D(sparsesReco['RecoFD'].Projection(axes['RecoFD']['Pt']), sPtWeightsD, binned=False)
+        hPtFD = reweight_histo_1D(sparses_reco['RecoFD'].Projection(axes['RecoFD']['Pt']), sPtWeightsD, binned=False)
     elif sPtWeightsB:
         if Bspeciesweights:
             hPtFD = reweight_histo_3D(
-                sparsesReco['RecoFD'].Projection(axes['RecoFD']['Pt'], axes['RecoFD']['PtBMoth'], axes['RecoFD']['FlagBHad']), 
+                sparses_reco['RecoFD'].Projection(axes['RecoFD']['Pt'], axes['RecoFD']['PtBMoth'], axes['RecoFD']['FlagBHad']), 
                 sPtWeightsB, Bspeciesweights
             )
         else:
             hPtFD = reweight_histo_2D(
-                sparsesReco['RecoFD'].Projection(axes['RecoFD']['PtBMoth'], axes['RecoFD']['Pt']),          # 2D projection: Projection(ydim, xdim)
+                sparses_reco['RecoFD'].Projection(axes['RecoFD']['PtBMoth'], axes['RecoFD']['Pt']),          # 2D projection: Projection(ydim, xdim)
                 sPtWeightsB, binned=False
             )
     elif Bspeciesweights:
         hPtFD = reweight_histo_2D(
-            sparsesReco['RecoFD'].Projection(axes['RecoFD']['FlagBHad'], axes['RecoFD']['Pt']),             # 2D projection: Projection(ydim, xdim)
+            sparses_reco['RecoFD'].Projection(axes['RecoFD']['FlagBHad'], axes['RecoFD']['Pt']),             # 2D projection: Projection(ydim, xdim)
             Bspeciesweights, binned=True
         )
     else:
-        hPtFD = sparsesReco['RecoFD'].Projection(axes['RecoFD']['Pt'])
+        hPtFD = sparses_reco['RecoFD'].Projection(axes['RecoFD']['Pt'])
 
     ## write the output 
     hMassPrompt.Write('hPromptMass', writeopt)
@@ -165,38 +151,38 @@ def proj_mc_reco(sparsesReco, sPtWeightsD, sPtWeightsB, Bspeciesweights, writeop
     hPtPrompt.Write('hPromptPt', writeopt)
     hPtFD.Write('hFDPt', writeopt)
 
-def proj_mc_gen(sparsesGen, sPtWeightsD, sPtWeightsB, Bspeciesweights, writeopt):
+def proj_mc_gen(sparses_gen, sPtWeightsD, sPtWeightsB, Bspeciesweights, writeopt):
 
-    for key, sparse in sparsesGen.items():
+    for key, sparse in sparses_gen.items():
         if key != 'GenPrompt' and key != 'GenFD':
             sparse.Projection(axes[key]['Pt']).Write(f'h{key}Pt')
 
     ### prompt
-    hGenPtPrompt = sparsesGen['GenPrompt'].Projection(axes['GenPrompt']['Pt'])
+    hGenPtPrompt = sparses_gen['GenPrompt'].Projection(axes['GenPrompt']['Pt'])
     if sPtWeightsD:
         hGenPtPrompt = reweight_histo_1D(hGenPtPrompt, sPtWeightsD, binned=False)
 
     ### FD
     if sPtWeightsD:
-        hGenPtFD = reweight_histo_1D(sparsesGen['GenFD'].Projection(axes['GenFD']['Pt']), sPtWeightsD, binned=False)
+        hGenPtFD = reweight_histo_1D(sparses_gen['GenFD'].Projection(axes['GenFD']['Pt']), sPtWeightsD, binned=False)
     elif sPtWeightsB:
         if Bspeciesweights:
             hGenPtFD = reweight_histo_3D(
-                sparsesGen['GenFD'].Projection(axes['GenFD']['Pt'], axes['GenFD']['PtBMoth'], axes['GenFD']['FlagBHad']),
+                sparses_gen['GenFD'].Projection(axes['GenFD']['Pt'], axes['GenFD']['PtBMoth'], axes['GenFD']['FlagBHad']),
                 sPtWeightsB, Bspeciesweights
             )
         else:
             hGenPtFD = reweight_histo_2D(
-                sparsesGen['GenFD'].Projection(axes['GenFD']['PtBMoth'], axes['GenFD']['Pt']),         # 2D projection: Projection(ydim, xdim)
+                sparses_gen['GenFD'].Projection(axes['GenFD']['PtBMoth'], axes['GenFD']['Pt']),         # 2D projection: Projection(ydim, xdim)
                 sPtWeightsB, binned=False
             )
     elif Bspeciesweights:
         hGenPtFD = reweight_histo_2D(
-            sparsesGen['GenFD'].Projection(axes['GenFD']['FlagBHad'], axes['GenFD']['Pt']),            # 2D projection: Projection(ydim, xdim)
+            sparses_gen['GenFD'].Projection(axes['GenFD']['FlagBHad'], axes['GenFD']['Pt']),            # 2D projection: Projection(ydim, xdim)
             Bspeciesweights, binned=True
         )
     else:
-        hGenPtFD = sparsesGen['GenFD'].Projection(axes['GenFD']['Pt'])
+        hGenPtFD = sparses_gen['GenFD'].Projection(axes['GenFD']['Pt'])
 
     ## write the output
     hGenPtPrompt.Write('hPromptGenPt', writeopt)
@@ -296,6 +282,21 @@ if __name__ == "__main__":
     if operations.get("proj_mc"):
         sPtWeightsD, sPtWeightsB, Bspeciesweights = get_pt_weights(config["projections"]) if config['projections'].get('PtWeightsFile') else (None, None, None)
 
+    if operations.get("proj_data"):
+        reso_file = TFile.Open(config["projections"]["Resolution"], 'r')
+        print(f"Opened resolution file {config["projections"]['Resolution']}")
+        det_A = config["projections"].get('detA', 'FT0c')
+        det_B = config["projections"].get('detB', 'FV0a')
+        det_C = config["projections"].get('detC', 'TPCtot')
+        print(f"Getting resolution histogram for {det_A}_{det_B}_{det_C}")
+        reso_hist = reso_file.Get(f'{det_A}_{det_B}_{det_C}/histo_reso_delta_cent')
+        reso_hist.SetDirectory(0)
+        reso_file.Close()
+        outfile.cd()
+        reso_hist.Write("hResolution")
+        resolution = reso_hist.GetBinContent(1)
+        print(f"Wrote resolution histogram for {det_A}_{det_B}_{det_C}")
+
     with alive_bar(len(cutSetCfg['Pt']['min']), title='Processing pT bins') as bar:
         for iPt, (ptMin, ptMax, bkg_min, bkg_max, fd_min, fd_max) in enumerate(zip(cutSetCfg['Pt']['min'], cutSetCfg['Pt']['max'],
                                                                                    cutSetCfg['ScoreBkg']['min'], cutSetCfg['ScoreBkg']['max'],
@@ -303,25 +304,23 @@ if __name__ == "__main__":
 
             # Cut on centrality and pt on data applied in the preprocessing
             print(f'Projecting distributions for {ptMin:.1f} < pT < {ptMax:.1f} GeV/c')
-            sparsesFlow, sparsesReco, sparsesGen, axes, resolutions = get_pt_preprocessed_sparses(config, iPt)
-
+            sparse_flow, sparses_reco, sparses_gen, axes = get_pt_preprocessed_sparses(config, iPt)
             make_dir_root_file(f'pt_{int(ptMin*10)}_{int(ptMax*10)}', outfile)
             outfile.cd(f'pt_{int(ptMin*10)}_{int(ptMax*10)}')
             if operations["proj_data"]:
-                for key, sparse in sparsesFlow.items():
-                    sparse.GetAxis(axes['Flow']['ScoreFD']).SetRangeUser(fd_min, fd_max)
-                    sparse.GetAxis(axes['Flow']['ScoreBkg']).SetRangeUser(bkg_min, bkg_max)
-                proj_data(sparsesFlow, resolutions, axes, config["projections"]['inv_mass_bins'][iPt], config["projections"].get('storeML'), write_opt_data)
+                sparse_flow["FlowSP"].GetAxis(axes['FlowSP']['ScoreFD']).SetRangeUser(fd_min, fd_max)
+                sparse_flow["FlowSP"].GetAxis(axes['FlowSP']['ScoreBkg']).SetRangeUser(bkg_min, bkg_max)
+                proj_data(iPt, sparse_flow["FlowSP"], axes, resolution, config["projections"], write_opt_data)
                 print(f"Projected data!")
 
             if operations.get("proj_mc"):
-                for key, iSparse in sparsesReco.items():
-                    iSparse.GetAxis(axes[key]['ScoreBkg']).SetRangeUser(bkg_min, bkg_max)
-                    iSparse.GetAxis(axes[key]['ScoreFD']).SetRangeUser(fd_min, fd_max)
+                for key, i_sparse in sparses_reco.items():
+                    i_sparse.GetAxis(axes[key]['ScoreBkg']).SetRangeUser(bkg_min, bkg_max)
+                    i_sparse.GetAxis(axes[key]['ScoreFD']).SetRangeUser(fd_min, fd_max)
 
-                proj_mc_reco(sparsesReco, sPtWeightsD, sPtWeightsB, Bspeciesweights, write_opt_mc)
+                proj_mc_reco(sparses_reco, sPtWeightsD, sPtWeightsB, Bspeciesweights, write_opt_mc)
                 print("Projected mc reco!")
-                proj_mc_gen(sparsesGen, sPtWeightsD, sPtWeightsB, Bspeciesweights, write_opt_mc)
+                proj_mc_gen(sparses_gen, sPtWeightsD, sPtWeightsB, Bspeciesweights, write_opt_mc)
                 print("Projected mc gen!")
 
             print('\n\n')
