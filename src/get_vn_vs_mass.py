@@ -689,6 +689,7 @@ def get_vn_vs_mass(fitConfigFileName, inFileName, batch, isMultitrial):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Arguments')
     parser.add_argument('fitConfigFileName', metavar='text', default='config_Ds_Fit.yml')
+    parser.add_argument('cutsetConfigFileName', metavar='text', default='cutset_XX.yml')
     parser.add_argument('inFileName', metavar='text', default='')
     parser.add_argument('--batch', '-b', help='suppress video output', action='store_true')
     parser.add_argument('--multitrial', help='suppress redundant prints', action='store_true')
