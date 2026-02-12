@@ -162,8 +162,8 @@ public:
   void SetSuppressOutput(Bool_t suppress) {fSuppressOutput=suppress;}
 
   // Double-sided crystal ball functions
-  Double_t DoubleSidedCBAsymm(double x, double mu, double sigma, double a1, double n1, double a2, double n2);
-  Double_t DoubleSidedCBSymm(double x, double mu, double sigma, double a, double n);
+  Double_t DoubleSidedCBAsymmPDF(double x, double mu, double sigma, double a1, double n1, double a2, double n2);
+  Double_t DoubleSidedCBSymmPDF(double x, double mu, double sigma, double a, double n);
 
   TH1F *GetPullDistribution();
 
