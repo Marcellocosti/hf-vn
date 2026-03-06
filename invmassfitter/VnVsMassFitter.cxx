@@ -132,7 +132,7 @@ VnVsMassFitter::VnVsMassFitter()
 }
 
 //________________________________________________________________
-VnVsMassFitter::VnVsMassFitter(std::string name, TH1F* hMass, TH1F* hvn, Double_t min, Double_t max, Int_t funcMassBkg, Int_t funcMassSgn, Int_t funcVnBkg)
+VnVsMassFitter::VnVsMassFitter(std::string name, TH1F* hMass, TH1F* hvn, Double_t min, Double_t max, Int_t funcMassBkg, Int_t funcMassSgn, Int_t funcVnBkg, Bool_t suppressOutput)
   :TObject()
   ,fName(name)
   ,fPrefitParsHisto(0x0)
@@ -225,7 +225,7 @@ VnVsMassFitter::VnVsMassFitter(std::string name, TH1F* hMass, TH1F* hvn, Double_
   ,fDoSecondPeakVn(kFALSE)
   ,fFixVnSecPeakToSgn(kFALSE)
   ,fHarmonic(2)
-  ,fSuppressOutput(kFALSE)
+  ,fSuppressOutput(suppressOutput)
   ,fAnchorTemplsMode(AnchorToFirst)
   ,fHistoSgnPrefit(0x0)
   ,fFixSgnFromMCPrefit(kFALSE)
@@ -275,14 +275,18 @@ Int_t VnVsMassFitter::RunPrefits() {
 
   // Prefit the signal peak on MC template if available
   if (fHistoSgnPrefit) {
-    std::cout << "\n--- [" << fName << "] Prefitting signal from MC ---" << std::endl;
+    if (!fSuppressOutput) {
+      std::cout << "\n--- [" << fName << "] Prefitting signal from MC ---" << std::endl;
+    }
     Bool_t prefitsgn=PrefitSignal();
     if(!prefitsgn) {printf("Impossible to perform the prefit of signal shape on MC template\n"); return kFALSE;}
     // Init fMassTotFunc and fVnTotFunc parameters from signal prefit, skip normalization
   }
 
   // Prefit the combinatorial background
-  std::cout << "\n--- [" << fName << "] Prefitting combinatorial background from data sidebands ---" << std::endl;
+  if (!fSuppressOutput) {
+    std::cout << "\n--- [" << fName << "] Prefitting combinatorial background from data sidebands ---" << std::endl;
+  }
   Bool_t prefitbkg=PrefitCombBkg();
   if(!prefitbkg) {printf("Impossible to perform the prefit of comb. bkg.\n"); return kFALSE;}
   // Prefit the invariant mass spectrum to get initial values for the simultaneous fit
@@ -331,13 +335,17 @@ Int_t VnVsMassFitter::RunPrefits() {
   InitFunctionPars("MassFull");
 
   // Prefit the invariant mass spectrum
-  std::cout << "--- [" << fName << "] Prefitting Inv. Mass spectrum ---" << std::endl;
+  if (!fSuppressOutput) {
+    std::cout << "--- [" << fName << "] Prefitting Inv. Mass spectrum ---" << std::endl;
+  }
   Int_t massprefit=PrefitMass();
   if(massprefit == 0) {printf("Impossible to perform the mass prefit\n"); return kFALSE;}
   if(massprefit == 2) {return 2;}
 
   // Prefit the vn sidebands
-  std::cout << "\n--- [" << fName << "] Prefitting Vn of sidebands ---" << std::endl;
+  if (!fSuppressOutput) {
+    std::cout << "\n--- [" << fName << "] Prefitting Vn of sidebands ---" << std::endl;
+  }
   Bool_t vnprefit=PrefitVnSidebands();
   if(!vnprefit) {printf("Impossible to perform the bkg vn prefit\n"); return kFALSE;}
 
@@ -354,10 +362,14 @@ Int_t VnVsMassFitter::PrefitMass(){
   TString opt = "R,S,+,0,N";
   if (fSuppressOutput) opt += ",Q";   // Quiet
   TFitResultPtr res = fMassHisto->Fit(Form("fMassTotFunc_%s", fName.c_str()),opt.Data());
-  std::cout << "PrefitMass fit done" << std::endl;
+  if (!fSuppressOutput) {
+    std::cout << "PrefitMass fit done" << std::endl;
+  }
 
   if (!res.Get() || !res->IsValid()) {
-    printf("PrefitMass failed\n");
+    if (!fSuppressOutput) {
+      printf("PrefitMass failed\n");
+    }
     return 0;
   }
 
@@ -365,7 +377,9 @@ Int_t VnVsMassFitter::PrefitMass(){
   // and fMassRangeMaxSecPeak and, if too low, remove it
   if (fSecondPeak) {
     for (Int_t iPar = 0; iPar < fNParsMassBkg; iPar++) {
-      std::cout << "Setting prefit parameter " << iPar << " from " << fMassBkgFunc->GetParameter(iPar) << " to " << fMassBkgFunc->GetParameter(iPar) << std::endl;
+      if (!fSuppressOutput) {
+        std::cout << "Setting prefit parameter " << iPar << " from " << fMassBkgFunc->GetParameter(iPar) << " to " << fMassTotFunc->GetParameter(iPar) << std::endl;
+      }
       fMassBkgFunc->SetParameter(iPar, fMassTotFunc->GetParameter(iPar));
     }
     Int_t binMin = fMassHisto->FindBin(fMassRangeMinSecPeak);
@@ -374,11 +388,15 @@ Int_t VnVsMassFitter::PrefitMass(){
     // Subtract the background counts in the same region
     Double_t bkgCountsInSecPeakRegion = fMassBkgFunc->Integral(fMassRangeMinSecPeak, fMassRangeMaxSecPeak) / fMassHisto->GetBinWidth(1);
     Double_t netCounts = countsInSecPeakRegion - bkgCountsInSecPeakRegion;
-    std::cout << "Counts in second peak region: " << countsInSecPeakRegion << ", background counts: " << bkgCountsInSecPeakRegion
-              << ", net counts: " << netCounts << std::endl;
+    if (!fSuppressOutput) {
+      std::cout << "Counts in second peak region: " << countsInSecPeakRegion << ", background counts: " << bkgCountsInSecPeakRegion
+                << ", net counts: " << netCounts << std::endl;
+    }
     if (netCounts < fMinCountsForSecPeak) {
-      printf("PrefitMass: Second peak will be removed due to low counts in the specified region (%.2f < %.2i)\n",
-             netCounts, fMinCountsForSecPeak);
+      if (!fSuppressOutput) {
+        printf("PrefitMass: Second peak will be removed due to low counts in the specified region (%.2f < %.2i)\n",
+               netCounts, fMinCountsForSecPeak);
+      }
       return 2; // Indicate that the second peak has to be removed
     }
   }
@@ -403,7 +421,9 @@ Int_t VnVsMassFitter::PrefitCombBkg(){
   fIsMassSidebandFit = kFALSE;
 
   if (!res.Get() || !res->IsValid()) {
-    printf("PrefitCombBkg failed\n");
+    if (!fSuppressOutput) {
+      std::cout << "PrefitCombBkg fit failed" << std::endl;
+    }
     return kFALSE;
   }
   for (size_t iPar = 0; iPar < (size_t)fNParsMassBkg; iPar++) {
@@ -474,7 +494,7 @@ Int_t VnVsMassFitter::SimultaneousFit() {
   // Create map of fit parameter initial values and limits
   std::cout << "\n--- [" << fName << "] Performing simultaneous fit of mass and vn vs mass ---" << std::endl;
   if (fSuppressOutput) {
-    std::cout << "Suppressing output for simultaneous fit" << std::endl;
+    // std::cout << "Suppressing output for simultaneous fit" << std::endl;
     gErrorIgnoreLevel = kFatal;
   }
   if(!fMassHisto || !fVnVsMassHisto) {printf("Histograms not set! Exit."); return kFALSE;}
@@ -483,17 +503,23 @@ Int_t VnVsMassFitter::SimultaneousFit() {
   Int_t prefitsStatus = RunPrefits();
 
   if (prefitsStatus == kFALSE) {
-    std::cout << "Prefits failed, exiting simultaneous fit." << std::endl;
+    if (!fSuppressOutput) {
+      std::cout << "Prefits failed, exiting simultaneous fit." << std::endl;
+    }
     return kFALSE;
   } else if (prefitsStatus == 2) {
-    std::cout << "Mass prefit indicated to remove second peak, restarting the chain ..." << std::endl;
+    if (!fSuppressOutput) {
+      std::cout << "Mass prefit indicated to remove second peak, restarting the chain ..." << std::endl;
+    }
     fMassSecPeakFunc = 0x0;
     fSecondPeak = kFALSE;
     DefineNumberOfParameters();
     DefineFunctions();
     Int_t prefitsWithoutSecPeakStatus = RunPrefits();
     if (prefitsWithoutSecPeakStatus != kTRUE) {
-      std::cout << "Prefits without second peak failed, exiting simultaneous fit." << std::endl;
+      if (!fSuppressOutput) {
+        std::cout << "Prefits without second peak failed, exiting simultaneous fit." << std::endl;
+      }
       return kFALSE;
     }
   }
@@ -506,7 +532,9 @@ Int_t VnVsMassFitter::SimultaneousFit() {
   //   std::cout << "Setting mass par " << iPar << " from " << fVnTotFunc->GetParameter(iPar) << " to " << fMassTotFunc->GetParameter(iPar) << std::endl;
   // }
 
-  std::cout << "\n--- [" << fName << "] Starting simultaneous fit ---" << std::endl;
+  if (!fSuppressOutput) {
+    std::cout << "\n--- [" << fName << "] Starting simultaneous fit ---" << std::endl;
+  }
   ROOT::Math::WrappedMultiTF1 wfTotMass(*fMassTotFunc,1);
   ROOT::Math::WrappedMultiTF1 wfTotVn(*fVnTotFunc,1);
 
@@ -529,7 +557,9 @@ Int_t VnVsMassFitter::SimultaneousFit() {
 
   //define fitter
   ROOT::Fit::Fitter fitter;
-  std::cout << "\n--- [" << fName << "] Configuring fitter ---" << std::endl;
+  if (!fSuppressOutput) {
+    std::cout << "\n--- [" << fName << "] Configuring fitter ---" << std::endl;
+  }
 
   // create before the parameter settings in order to fix or set range on them
   double parLowLim{0.}, parUpLim{0.};
@@ -568,45 +598,39 @@ Int_t VnVsMassFitter::SimultaneousFit() {
     if(fFixRflOverSig) fitter.Config().ParSettings(fNParsMassBkg+fNParsMassSgn+fNParsSec).Fix();
     if(fVnRflLimited) fitter.Config().ParSettings(fNParsTotMass+fNParsVnBkg+fNVnParsSgn-1).SetLimits(fVnRflMin,fVnRflMax);
   }
-  std::cout << "\n--- [" << fName << "] Parameter fixing and limits set ---" << std::endl;
-  // When sgn func is Double CrystalBall, the sgnInt, alpha and N parameters are fixed 
-  // to the ones obtained from the mass prefit (alpha and N fixed to the MC from the config)
-  if (fMassSgnFuncType==ETypeOfSgn::kDoubleCBSymm) {
-    if (fFixSgnFromMCPrefit) {
+  if (!fSuppressOutput) {
+    std::cout << "\n--- [" << fName << "] Parameter fixing and limits set ---" << std::endl;
+  }
+  // When sgn func is a crystalBall, the tails are fixed to mass prefit,
+  // which can be determined by prefitting MC 
+  if (fMassSgnFuncType==ETypeOfSgn::kDoubleCBSymm || fMassSgnFuncType==ETypeOfSgn::kLeftCB) {
     fitter.Config().ParSettings(fNParsMassBkg+3).Fix();   // alpha
     fitter.Config().ParSettings(fNParsMassBkg+4).Fix();   // N
-    } else {
-      fitter.Config().ParSettings(fNParsMassBkg+3).SetLimits(initpars[fNParsMassBkg+3] - (initpars[fNParsMassBkg+3] / 5), initpars[fNParsMassBkg+3] + (initpars[fNParsMassBkg+3] / 5));   // alpha
-      fitter.Config().ParSettings(fNParsMassBkg+4).SetLimits(initpars[fNParsMassBkg+4] - (initpars[fNParsMassBkg+4] / 5), initpars[fNParsMassBkg+4] + (initpars[fNParsMassBkg+4] / 5));   // N
-    }
   }
   if (fMassSgnFuncType==ETypeOfSgn::kDoubleCBAsymm) {
-    if (fFixSgnFromMCPrefit) {
       fitter.Config().ParSettings(fNParsMassBkg+3).Fix();   // alpha1
       fitter.Config().ParSettings(fNParsMassBkg+4).Fix();   // N1
       fitter.Config().ParSettings(fNParsMassBkg+5).Fix();   // alpha2
       fitter.Config().ParSettings(fNParsMassBkg+6).Fix();   // N2
-    } else {
-      fitter.Config().ParSettings(fNParsMassBkg+3).SetLimits(initpars[fNParsMassBkg+3] - (initpars[fNParsMassBkg+3] / 5), initpars[fNParsMassBkg+3] + (initpars[fNParsMassBkg+3] / 5));   // alpha1
-      fitter.Config().ParSettings(fNParsMassBkg+4).SetLimits(initpars[fNParsMassBkg+4] - (initpars[fNParsMassBkg+4] / 5), initpars[fNParsMassBkg+4] + (initpars[fNParsMassBkg+4] / 5));   // N1
-      fitter.Config().ParSettings(fNParsMassBkg+5).SetLimits(initpars[fNParsMassBkg+5] - (initpars[fNParsMassBkg+5] / 5), initpars[fNParsMassBkg+5] + (initpars[fNParsMassBkg+5] / 5));   // alpha2
-      fitter.Config().ParSettings(fNParsMassBkg+6).SetLimits(initpars[fNParsMassBkg+6] - (initpars[fNParsMassBkg+6] / 5), initpars[fNParsMassBkg+6] + (initpars[fNParsMassBkg+6] / 5));   // N2
-    }
   }
-  std::cout << "\n--- [" << fName << "] Parameter limits and fixing for signal shape applied ---" << std::endl;
+  if (!fSuppressOutput) {
+    std::cout << "\n--- [" << fName << "] Parameter limits and fixing for signal shape applied ---" << std::endl;
+  }
 
   fitter.Config().MinimizerOptions().SetPrintLevel(0);
   fitter.Config().SetMinimizer("Minuit2","Migrad");
   for(Int_t iPar=0; iPar<fNParsTotVn; iPar++) {fitter.Config().ParSettings(iPar).SetName(fVnTotFunc->GetParName(iPar));}
   // fit FCN function directly
   // (specify optionally data size and flag to indicate that is a chi2 fit
-  std::cout << "\n--- [" << fName << "] Running fit ---" << std::endl;
-  std::cout << "Debugging of fit parameters before fit:" << std::endl;
-  for(Int_t iPar=0; iPar<fNParsTotVn; iPar++) {
-    std::cout << "Par " << iPar << " (" << fitter.Config().ParSettings(iPar).Name() << "): ";
-    std::cout << fitter.Config().ParSettings(iPar).Value() << " [";
-    std::cout << fitter.Config().ParSettings(iPar).LowerLimit() << ", ";
-    std::cout << fitter.Config().ParSettings(iPar).UpperLimit() << "]" << std::endl;
+  if (!fSuppressOutput) {
+    std::cout << "\n--- [" << fName << "] Running fit ---" << std::endl;
+    std::cout << "Debugging of fit parameters before fit:" << std::endl;
+    for(Int_t iPar=0; iPar<fNParsTotVn; iPar++) {
+      std::cout << "Par " << iPar << " (" << fitter.Config().ParSettings(iPar).Name() << "): ";
+      std::cout << fitter.Config().ParSettings(iPar).Value() << " [";
+      std::cout << fitter.Config().ParSettings(iPar).LowerLimit() << ", ";
+      std::cout << fitter.Config().ParSettings(iPar).UpperLimit() << "]" << std::endl;
+    }
   }
   Bool_t isFitOk = fitter.FitFCN(fNParsTotVn,globalChi2,0,dataMass.Size()+dataVn.Size(),kFALSE);
   if(!isFitOk) return kFALSE;
@@ -614,7 +638,7 @@ Int_t VnVsMassFitter::SimultaneousFit() {
   if (!fSuppressOutput) {
     result.Print(std::cout);
   }
-  if(fTemplates) {
+  if(fTemplates && (!fSuppressOutput)) {
     printf("\n ---> Templates share the vn parameter with the signal! \n");
   }
   for(Int_t iPar=0; iPar<fNParsTotVn; iPar++) {
@@ -763,6 +787,9 @@ Double_t VnVsMassFitter::MassSignal(Double_t *m, Double_t *pars) {
     case 1:
       return pars[0]*(pars[3]*GetGausPDF(m[0],pars[1],pars[2])+(1-pars[3])*GetGausPDF(m[0],pars[1],pars[4]));
       break;
+    case 2:
+      return pars[0]*LeftCBPDF(m[0],pars[1],pars[2],pars[3],pars[4]);
+      break;
     case 3:
       return pars[0]*DoubleSidedCBAsymmPDF(m[0],pars[1],pars[2],pars[3],pars[4],pars[5],pars[6]);
       break;
@@ -895,6 +922,9 @@ Double_t VnVsMassFitter::vnBkgFunc(Double_t *m, Double_t *pars) {
       break;
     case 2: //parabolic
       return GetPolPDF(m[0],pars,2,kFALSE);
+      break;
+    case 3: //constant
+      return GetPolPDF(m[0],pars,0,kFALSE);
       break;
     case 6: //higher order (>=3) polinomial
       return GetHigherPolFuncPDF(m[0],pars,fPolDegreeVnBkg,kFALSE);
@@ -1042,14 +1072,14 @@ Double_t VnVsMassFitter::DoubleSidedCBAsymmPDF(double x, double mu, double sigma
   // 1. Calculate the raw (unnormalized) value
   double val = 0;
   if (t < -absAlphaL) {
-      double a = std::pow(n1 / absAlphaL, n1) * std::exp(-0.5 * absAlphaL * absAlphaL);
+      double aTail = std::pow(n1 / absAlphaL, n1) * std::exp(-0.5 * absAlphaL * absAlphaL);
       double b = n1 / absAlphaL - absAlphaL;
-      val = a / std::pow(b - t, n1);
+      val = aTail / std::pow(b - t, n1);
   } 
   else if (t > absAlphaR) {
-      double a = std::pow(n2 / absAlphaR, n2) * std::exp(-0.5 * absAlphaR * absAlphaR);
+      double aTail = std::pow(n2 / absAlphaR, n2) * std::exp(-0.5 * absAlphaR * absAlphaR);
       double b = n2 / absAlphaR - absAlphaR;
-      val = a / std::pow(b + t, n2);
+      val = aTail / std::pow(b + t, n2);
   } 
   else {
       val = std::exp(-0.5 * t * t);
@@ -1081,9 +1111,9 @@ Double_t VnVsMassFitter::DoubleSidedCBSymmPDF(double x, double mu, double sigma,
       val = std::exp(-0.5 * t * t);
   } else {
       // Power-law Tails (Symmetric)
-      double a = std::pow(n / absAlpha, n) * std::exp(-0.5 * absAlpha * absAlpha);
+      double aTail = std::pow(n / absAlpha, n) * std::exp(-0.5 * absAlpha * absAlpha);
       double b = n / absAlpha - absAlpha;
-      val = a / std::pow(b + std::abs(t), n);
+      val = aTail / std::pow(b + std::abs(t), n);
   }
 
   // 2. Analytical Normalization Factor
@@ -1095,6 +1125,34 @@ Double_t VnVsMassFitter::DoubleSidedCBSymmPDF(double x, double mu, double sigma,
   double term_tails = 2.0 * sigma * (n / absAlpha) * (1.0 / (n - 1.0)) * std::exp(-0.5 * absAlpha * absAlpha);
 
   return val / (term_gauss + term_tails);
+}
+
+//__________________________________________________________________________
+Double_t VnVsMassFitter::LeftCBPDF(double x, double mu, double sigma, double a, double n) {
+  // t is the distance from the mean in units of sigma
+  double t = (x - mu) / sigma;
+  double absAlpha = std::abs(a);
+
+  // 1. Calculate the raw (unnormalized) value
+  double val = 0;
+  if (t > -absAlpha) {
+      // Gaussian Core
+      val = std::exp(-0.5 * t * t);
+  } else {
+      // Power-law Tails (Symmetric)
+      double aTail = std::pow(n / absAlpha, n) * std::exp(-0.5 * absAlpha * absAlpha);
+      double b = n / absAlpha - absAlpha;
+      val = aTail / std::pow(b - t, n);
+  }
+
+  // 2. Analytical Normalization Factor
+  // Gaussian core integral: sigma * sqrt(pi/2) * (1 + erf(alpha/sqrt2))
+  double term_gauss = sigma * std::sqrt(M_PI / 2.0) * (1 + std::erf(absAlpha / std::sqrt(2.0)));
+
+  // Tail integral: [sigma * (n/|alpha|) * exp(-0.5*alpha^2) / (n - 1)]
+  double term_tail = sigma * (n / absAlpha) * (1.0 / (n - 1.0)) * std::exp(-0.5 * absAlpha * absAlpha);
+
+  return val / (term_gauss + term_tail);
 }
 
 //________________________________________________________________
@@ -1196,6 +1254,10 @@ void VnVsMassFitter::SetFuncParNames() {
       fMassSgnFunc->SetParName(4, "Sigma2");
       fMassSgnFunc->SetParName(3, "Frac");
       break;
+    case 2: //left-sided crystalball
+      fMassSgnFunc->SetParName(2, "Sigma");
+      fMassSgnFunc->SetParName(3, "Alpha");
+      fMassSgnFunc->SetParName(4, "N");
     case 3: //asymmetric crystalball
       fMassSgnFunc->SetParName(2, "Sigma");
       fMassSgnFunc->SetParName(3, "Alpha1");
@@ -1210,11 +1272,13 @@ void VnVsMassFitter::SetFuncParNames() {
       break;
 
     default:
-      printf("Error in setting signal par names: check fMassSgnFuncType");
+      printf("Error in setting mass signal par names: check fMassSgnFuncType\n");
       break;
   }
 
-  std::cout << "Setting background parameter names..." << std::endl;
+  if (!fSuppressOutput) {
+    std::cout << "Setting background parameter names: fMassBkgFuncType = " << fMassBkgFuncType << std::endl;
+  }
   switch(fMassBkgFuncType) {
     case 0: //expo
       fMassBkgFunc->SetParName(0, "BkgNorm");
@@ -1248,7 +1312,7 @@ void VnVsMassFitter::SetFuncParNames() {
       }
       break;
     default:
-      printf("Error in setting signal par names: check fMassBkgFuncType");
+      printf("Error in setting mass bkg par names: check fMassBkgFuncType\n");
       break;
   }
 
@@ -1265,20 +1329,33 @@ void VnVsMassFitter::SetFuncParNames() {
   }
 
   // Setting Vn parameter names
+  if (!fSuppressOutput) {
+    std::cout << "Setting vn function parameter names." << std::endl;
+  }
   switch(fVnBkgFuncType) {
     case 1:
+      if (!fSuppressOutput) {
+        std::cout << "Using linear vn background: setting par names." << std::endl;
+      }
       fVnBkgFunc->SetParName(0, "ConstVnBkg");
       fVnBkgFunc->SetParName(1, "SlopeVnBkg");
       break;
     case 2:
+      if (!fSuppressOutput) {
+        std::cout << "Using parabolic vn background: setting par names." << std::endl;
+      }
       fVnBkgFunc->SetParName(0, "ConstVnBkg");
       fVnBkgFunc->SetParName(1, "Coef1VnBkg");
       fVnBkgFunc->SetParName(2, "Coef2VnBkg");
       break;
     case 3:
+      if (!fSuppressOutput) {
+        std::cout << "Using constant vn background: setting par name." << std::endl;
+      }
       fVnBkgFunc->SetParName(0, "ConstVnBkg");
+      break;
     default:
-      printf("Error in setting signal par names: check fVnBkgFuncType");
+      printf("Error in setting vn bkg par names: check fVnBkgFuncType\n");
       break;
   }
   // fVnTotFunc->SetParName(fNParsMassBkg+fNParsMassSgn+fNParsRfl+fNParsSec+fNParsTempls+fNParsVnBkg,Form("v%dSgn",fHarmonic));
@@ -1292,8 +1369,10 @@ void VnVsMassFitter::SetFuncParNames() {
   if(fReflections && fVnRflOpt==kFreePar) {
     fInitFuncPars[Form("v%dRefl",fHarmonic)] = {0.05, -0.3, 0.5};
   }
-  std::cout << "Parameter names set." << std::endl;
-  std::cout << "Length of fInitFuncPars: " << fInitFuncPars.size() << std::endl;
+  if (!fSuppressOutput) {
+    std::cout << "Parameter names set." << std::endl;
+    std::cout << "Length of fInitFuncPars: " << fInitFuncPars.size() << std::endl;
+  }
 }
 
 //________________________________________________________________
@@ -1316,25 +1395,31 @@ void VnVsMassFitter::SetParInitValsAndNames() {
       fInitFuncPars["Sigma2"] = {0.015, 0, 0.2};
       fInitFuncPars["Frac"] = {0.1, 0, 1};
       break;
+    case 2: //symmetric crystalball
+      fInitFuncPars["Sigma"] = {0.015, 0, 0.2};
+      fInitFuncPars["Alpha"] = {2, 0.8, 20};
+      fInitFuncPars["N"] = {20, 1.05, 100};
     case 3: //asymmetric crystalball
       fInitFuncPars["Sigma"] = {0.015, 0, 0.2};
-      fInitFuncPars["Alpha1"] = {2, 1, 10};
-      fInitFuncPars["N1"] = {2, 1.05, 10};
-      fInitFuncPars["Alpha2"] = {2, 1, 10};
-      fInitFuncPars["N2"] = {2, 1.05, 10};
+      fInitFuncPars["Alpha1"] = {2, 0.8, 20};
+      fInitFuncPars["N1"] = {20, 1.05, 100};
+      fInitFuncPars["Alpha2"] = {2, 0.8, 20};
+      fInitFuncPars["N2"] = {20, 1.05, 100};
       break;
     case 4: //symmetric crystalball
       fInitFuncPars["Sigma"] = {0.015, 0, 0.2};
-      fInitFuncPars["Alpha"] = {2, 1, 10};
-      fInitFuncPars["N"] = {2, 1.05, 10};
+      fInitFuncPars["Alpha"] = {2, 0.8, 20};
+      fInitFuncPars["N"] = {20, 1.05, 100};
       break;
 
     default:
-      printf("Error in setting signal par names: check fMassSgnFuncType");
+      printf("Error in setting mass signal par names: check fMassSgnFuncType\n");
       break;
   }
 
-  std::cout << "Setting background parameter names..." << std::endl;
+  if (!fSuppressOutput) {
+    std::cout << "Setting mass background parameter names..." << std::endl;
+  }
   switch(fMassBkgFuncType) {
     case 0: //expo
       fInitFuncPars["BkgNorm"] = {integral/10, 0, integral};
@@ -1368,7 +1453,7 @@ void VnVsMassFitter::SetParInitValsAndNames() {
       }
       break;
     default:
-      printf("Error in setting signal par names: check fMassBkgFuncType");
+      printf("Error in setting mass bkg par names: check fMassBkgFuncType\n");
       break;
   }
 
@@ -1397,8 +1482,9 @@ void VnVsMassFitter::SetParInitValsAndNames() {
       break;
     case 3:
       fInitFuncPars["ConstVnBkg"] = {0.05, 0, 1};
+      break;
     default:
-      printf("Error in setting signal par names: check fVnBkgFuncType");
+      printf("Error in setting vn bkg par names: check fVnBkgFuncType\n");
       break;
   }
   // fVnTotFunc->SetParName(fNParsMassBkg+fNParsMassSgn+fNParsRfl+fNParsSec+fNParsTempls+fNParsVnBkg,Form("v%dSgn",fHarmonic));
@@ -1412,8 +1498,10 @@ void VnVsMassFitter::SetParInitValsAndNames() {
   if(fReflections && fVnRflOpt==kFreePar) {
     fInitFuncPars[Form("v%dRefl",fHarmonic)] = {0.05, -0.3, 0.5};
   }
-  std::cout << "Parameter names set." << std::endl;
-  std::cout << "Length of fInitFuncPars: " << fInitFuncPars.size() << std::endl;
+  if (!fSuppressOutput) {
+    std::cout << "Parameter names set." << std::endl;
+    std::cout << "Length of fInitFuncPars: " << fInitFuncPars.size() << std::endl;
+  }
 }
 
 //________________________________________________________________
@@ -1525,6 +1613,9 @@ void VnVsMassFitter::DefineNumberOfParameters() {
     case 1: //double gaus
       fNParsMassSgn=5;
       break;
+    case 2:
+      fNParsMassSgn=5;
+      break;
     case 3:
       fNParsMassSgn=7;
       break;
@@ -1532,7 +1623,7 @@ void VnVsMassFitter::DefineNumberOfParameters() {
       fNParsMassSgn=5;
       break;
     default:
-      printf("Error in computing fMassSgnFuncType: check fMassSgnFuncType");
+      printf("Error in computing fMassSgnFuncType: check fMassSgnFuncType\n");
       break;
   }
 
@@ -1559,7 +1650,7 @@ void VnVsMassFitter::DefineNumberOfParameters() {
       fNParsMassBkg=fPolDegreeBkg+1;
       break;
     default:
-      printf("Error in computing fNParsMassBkg: check fMassBkgFuncType");
+      printf("Error in computing fNParsMassBkg: check fMassBkgFuncType\n");
       break;
   }
 
@@ -1573,11 +1664,14 @@ void VnVsMassFitter::DefineNumberOfParameters() {
     case 2: //pol2
       fNParsVnBkg=3;
       break;
+    case 3: //pol0
+      fNParsVnBkg=1;
+      break;
     case 6: //high degree pol
       fNParsVnBkg=fPolDegreeVnBkg+1;
       break;
     default:
-      printf("Error in computing fNParsVnBkg: check fVnBkgFuncType");
+      printf("Error in computing fNParsVnBkg: check fVnBkgFuncType\n");
       break;
   }
 
@@ -1624,21 +1718,22 @@ void VnVsMassFitter::DefineNumberOfParameters() {
   }
   fNParsTotMass = fNParsMassSgn+fNParsMassBkg+fNParsSec+fNParsRfl+fNParsTempls;
   fNVnParsSgn = 1; // One Vn par for the signal
-  std::cout << "fFixVnSecPeakToSgn: " << fFixVnSecPeakToSgn << std::endl;
   if(fSecondPeak && fDoSecondPeakVn && !fFixVnSecPeakToSgn) {fNVnParsSgn+=1;} // One more Vn par for the second peak
   if(fReflections && fVnRflOpt==kFreePar) {fNVnParsSgn+=1;}  // One more Vn par for the reflections
   fNParsTotVn = fNParsTotMass+fNParsVnBkg+fNVnParsSgn;  // 1 for signal Vn
-  std::cout << "[Parameter summary]" << std::endl;
-  std::cout << "---> fNParsMassSgn: " << fNParsMassSgn << std::endl;
-  std::cout << "---> fNParsMassBkg: " << fNParsMassBkg << std::endl;
-  std::cout << "---> fNParsSec: " << fNParsSec << std::endl;
-  std::cout << "---> fNParsRfl: " << fNParsRfl << std::endl;
-  std::cout << "---> fNParsTempls: " << fNParsTempls << std::endl;
-  std::cout << "---> fNParsTotMass: " << fNParsTotMass << std::endl;
-  std::cout << "---> fNParsVnBkg: " << fNParsVnBkg << std::endl;
-  std::cout << "---> fNVnParsSgn: " << fNVnParsSgn << std::endl;
-  std::cout << "---> fNParsTotVn: " << fNParsTotVn << std::endl;
-  std::cout << std::endl;
+  if (!fSuppressOutput) {
+    std::cout << "[Parameter summary]" << std::endl;
+    std::cout << "---> fNParsMassSgn: " << fNParsMassSgn << std::endl;
+    std::cout << "---> fNParsMassBkg: " << fNParsMassBkg << std::endl;
+    std::cout << "---> fNParsSec: " << fNParsSec << std::endl;
+    std::cout << "---> fNParsRfl: " << fNParsRfl << std::endl;
+    std::cout << "---> fNParsTempls: " << fNParsTempls << std::endl;
+    std::cout << "---> fNParsTotMass: " << fNParsTotMass << std::endl;
+    std::cout << "---> fNParsVnBkg: " << fNParsVnBkg << std::endl;
+    std::cout << "---> fNVnParsSgn: " << fNVnParsSgn << std::endl;
+    std::cout << "---> fNParsTotVn: " << fNParsTotVn << std::endl;
+    std::cout << std::endl;
+  }
 }
 
 //_________________________________________________________________________

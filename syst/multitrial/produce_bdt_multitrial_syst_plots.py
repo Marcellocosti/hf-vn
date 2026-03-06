@@ -195,8 +195,14 @@ def produce_multitrial_syst_bdt_plots(default_cfg, results_dir):
                 hist = ry_cutset_file.Get(histo_name) if 'raw_yields' in setting['filename_pattern'] else eff_cutset_file.Get(histo_name)
                 print(f"ry_cutset_file.GetName(): {ry_cutset_file.GetName()}, trying to get histo {histo_name} for variable {variable}...")
                 vals[cutset_suffix][variable] = {}
-                ref_val = hist.GetBinContent(pt_bin_ref)
-                ref_unc = hist.GetBinError(pt_bin_ref) if setting.get('has_uncertainty', False) else 0.0
+                try:
+                    ref_val = hist.GetBinContent(pt_bin_ref)
+                    ref_unc = hist.GetBinError(pt_bin_ref) if setting.get('has_uncertainty', False) else 0.0
+                except Exception as e:
+                    print(f"Error retrieving reference value for {variable} in cutset {cutset_suffix}")
+                    ref_val = 0.0
+                    ref_unc = 0.0
+
                 vals[cutset_suffix][variable]['ref_val'] = ref_val
                 vals[cutset_suffix][variable]['ref_unc'] = ref_unc
                 vals[cutset_suffix][variable]['trials'] = []
@@ -397,7 +403,8 @@ def bkg_scan_summary(bkg_score_ref, bkg_scores, panels, cutset_suffix, pt_min, p
             )
             leg.AddEntry(g, "Trials", "lp")
             leg.AddEntry(line, "Reference", "l")
-            leg.AddEntry(box, "Stat. Unc.", "f")
+            if stat_unc_ref > 0:
+                leg.AddEntry(box, "Stat. Unc.", "f")
             leg.Draw()
             drawn_objects.append(leg)
 

@@ -8,7 +8,8 @@ import subprocess
 # from concurrent.futures import ProcessPoolExecutor
 work_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(f"{work_dir}/utils")
-from utils import check_dir, logger
+from utils import check_dir, logger, merge_cutsets_fits, produce_pt_bins_fit_summary
+from pathlib import Path
 
 paths = {
 	"Preprocess": os.path.join(work_dir, "./src/pre_process.py"),
@@ -100,6 +101,9 @@ def get_vn(flow_config, outdir, nworkers, mCutSets, extraction_type):
 		with concurrent.futures.ThreadPoolExecutor(max_workers=nworkers) as executor:
 			results_fit = list(executor.map(run_fit, range(mCutSets)))
 
+		merge_cutsets_fits(Path(f"{outdir}/raw_yields"))
+		produce_pt_bins_fit_summary(Path(f"{outdir}/raw_yields"), flow_config)
+
 def cut_variation(flow_config, outdir, correlated, combined=False, operations=None):
 	check_dir(f"{outdir}/cutVar")
 
@@ -163,15 +167,15 @@ def data_driven_fraction(outdir, combined=False):
 	if combined:
 		correlated_path = os.path.join(os.path.dirname(outdir), os.path.basename(outdir).replace("_combined", "_correlated"))
 		logger(f"Using cut variation from correlated analysis at {correlated_path}", level="INFO")
-		cutvar_file = f"{correlated_path}/cutVar/cutVar.root"
+		vn_extr_file = f"{correlated_path}/cutVar/cutVar.root"
 	else:
 		logger("Data driven fraction should be performed only for combined analysis. Are you sure you want to continue?", level="WARNING")
-		cutvar_file = f"{outdir}/cutVar/cutVar.root"
+		vn_extr_file = f"{outdir}/cutVar/cutVar.root"
 	
 	eff_path = f"{outdir}/effs"
 
 	cmd = (
-		f"python3 {paths['DataDrivenFraction']} {cutvar_file} {eff_path} -b"
+		f"python3 {paths['DataDrivenFraction']} {vn_extr_file} {eff_path} -b"
 	)
 	logger(f"{cmd}", level="COMMAND")
 	os.system(cmd)
@@ -322,11 +326,11 @@ if __name__ == "__main__":
 	outdir = config['outdir']
  
 	# For bdt bkg cut scan
-	if "bkg_" not in config['outdir']:
+	if "bkg_" not in config['outdir'] and "syst" not in config['outdir']:
 		if args.correlated:
-			outdir = f"{config['outdir']}/cutvar_{config['suffix']}" + "_correlated"
+			outdir = f"{config['outdir']}/vn_extr_{config['suffix']}" + "_correlated"
 		else:
-			outdir = f"{config['outdir']}/cutvar_{config['suffix']}" + "_combined"
+			outdir = f"{config['outdir']}/vn_extr_{config['suffix']}" + "_combined"
 	os.system(f"mkdir -p {outdir}")
 
 	# copy the configuration file

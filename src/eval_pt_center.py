@@ -35,37 +35,39 @@ def eval_pt_center(cfg_file_name, minimizer, workers=1):
 
     # Retrieve cutsets configs
     try:
-        cutsets_dir = os.path.join(cfg['outdir'], f"cutvar_{cfg['suffix']}_combined/cutsets")
+        cutsets_dir = os.path.join(cfg['outdir'], f"vn_extr_{cfg['suffix']}_combined/cutsets")
         cutset_files = [os.path.join(cutsets_dir, f) for f in os.listdir(cutsets_dir) if f.endswith('.yml')]
         out_dir_type = "combined"
     except Exception as e:
         logger(f"Could not find combined cutsets, trying correlated cutsets ... ", level="WARNING")
-        cutsets_dir = os.path.join(cfg['outdir'], f"cutvar_{cfg['suffix']}_correlated/cutsets")
+        cutsets_dir = os.path.join(cfg['outdir'], f"vn_extr_{cfg['suffix']}_correlated/cutsets")
         cutset_files = [os.path.join(cutsets_dir, f) for f in os.listdir(cutsets_dir) if f.endswith('.yml')]
         out_dir_type = "correlated"
     cutset_files.sort(key=lambda x: int(re.search(r'(\d+)', os.path.basename(x)).group(1)))
 
     infer_vars = ['fPt', 'fScalarProd', 'fCent']
+    infer_vars_labels = ['fPt (GeV/c)', 'fScalarProd', 'fCent (%)']
 
     # Loop over cutset configs
     s_weights = {}
     cfg_fit = cfg["v2extraction"]
 
     hist_summary_avg_pt = TH1F("h_summary_avg_pt", "h_summary_avg_pt", len(cfg["ptbins"])-1, array.array('d', cfg["ptbins"]))
+    hist_summary_pt_shifts = TH1F("h_summary_pt_shifts", "h_summary_pt_shifts", len(cfg["ptbins"])-1, array.array('d', cfg["ptbins"]))
     for i_pt_bin, (pt_min, pt_max) in enumerate(zip(cfg["ptbins"][:-1], cfg["ptbins"][1:])):
         logger(f"Pt bin {i_pt_bin}: {pt_min} - {pt_max}", level="INFO")
         # Load input
         pt_str = f"pt_{int(pt_min*10)}_{int(pt_max*10)}"
         has_sp_cent = True
-        prep_dir = f"{cfg['outdir']}/preprocess/{pt_str}/TreesPtCenterSp"
+        prep_dir = f"{cfg['ptCenter'].get('PrepDir', cfg['outdir'])}/preprocess/{pt_str}/TreesPtCenterSp"
         if not os.path.exists(prep_dir):
             prep_dir = f"{cfg['outdir']}/preprocess/{pt_str}/TreesPtCenter"
             has_sp_cent = False
             logger(f"Using tree without SP and centrality!", level="WARNING")
-        downsample_frac = cfg['pt_center']['downsample_fracs'][i_pt_bin] if cfg['pt_center'].get('downsample_fracs') else 1.0
+        downsample_frac = cfg['ptCenter']['downsample_fracs'][i_pt_bin] if cfg['ptCenter'].get('downsample_fracs') else 1.0
         df = load_aod_file(f"{prep_dir}/AO2D_{pt_str}.root", has_sp_cent, downsample_frac=downsample_frac)
 
-        out_dir_pt = f"{cfg['outdir']}/cutvar_{cfg['suffix']}_{out_dir_type}/ptcenter_{minimizer}/{pt_str}"
+        out_dir_pt = f"{cfg['outdir']}/vn_extr_{cfg['suffix']}_{out_dir_type}/ptcenter_{minimizer}/{pt_str}"
         if downsample_frac < 1.0:
             out_dir_pt += f"_downsampled_{downsample_frac}"
         os.makedirs(out_dir_pt, exist_ok=True)
@@ -75,8 +77,8 @@ def eval_pt_center(cfg_file_name, minimizer, workers=1):
         out_file = TFile.Open(f"{out_dir_pt}/pt_center.root", "recreate")
         histos_avgs = {}
         for var in infer_vars:
-            histos_avgs[f"h_{var}_sgn"] = ROOT.TH1F(f"h_{var}_sgn", f"h_{var}_sgn", len(cutset_files)-1, array.array('d', [i for i in range(len(cutset_files))]))
-            histos_avgs[f"h_{var}_bkg"] = ROOT.TH1F(f"h_{var}_bkg", f"h_{var}_bkg", len(cutset_files)-1, array.array('d', [i for i in range(len(cutset_files))]))
+            histos_avgs[f"h_{var}_sgn"] = ROOT.TH1F(f"h_{var}_sgn", f"h_{var}_sgn", len(cutset_files), array.array('d', [-0.5] + [i+0.5 for i in range(len(cutset_files))]))
+            histos_avgs[f"h_{var}_bkg"] = ROOT.TH1F(f"h_{var}_bkg", f"h_{var}_bkg", len(cutset_files), array.array('d', [-0.5] + [i+0.5 for i in range(len(cutset_files))]))
 
         sgn_funcs = {} # More info for signal functions, a dictionary is better
         sgn_funcs[cfg_fit['SgnFuncLabel']] = {
@@ -86,26 +88,27 @@ def eval_pt_center(cfg_file_name, minimizer, workers=1):
 
         histos_avgs[f"h_ry_{cfg_fit['SgnFuncLabel']}"] = ROOT.TH1F(f"h_ry_{cfg_fit['SgnFuncLabel']}",
                                                                    f"h_ry_{cfg_fit['SgnFuncLabel']}",
-                                                                   len(cutset_files)-1,
-                                                                   array.array('d', [i for i in range(len(cutset_files))]))
+                                                                   len(cutset_files),
+                                                                   array.array('d', [-0.5] + [i+0.5 for i in range(len(cutset_files))]))
         print(f"Adding signal function: {sgn_funcs[cfg_fit['SgnFuncLabel']]}, {cfg_fit['SgnFuncLabel']} ... ")
         if cfg_fit.get('InclSecPeak'):
             print("Including secondary peak signal function ... ")
             include_sec_peak = cfg_fit['InclSecPeak'][i_pt_bin] if isinstance(cfg_fit['InclSecPeak'], list) else cfg_fit['InclSecPeak']
             print(f"include_sec_peak = {include_sec_peak}")
             if include_sec_peak:
-                print(f"Adding secondary peak signal function: {cfg_fit['SgnFuncSecPeak'][i_pt_bin]} ... ")
+                sgn_func_sec_peak = cfg_fit['SgnFuncSecPeak'][i_pt_bin] if isinstance(cfg_fit['SgnFuncSecPeak'], list) else cfg_fit['SgnFuncSecPeak']
+                print(f"Adding secondary peak signal function: {sgn_func_sec_peak} ... ")
                 sgn_funcs[cfg_fit['SgnFuncSecPeakLabel']] = {
-                    'func': cfg_fit['SgnFuncSecPeak'][i_pt_bin] if isinstance(cfg_fit['SgnFuncSecPeak'], list) else cfg_fit['SgnFuncSecPeak'],
+                    'func': sgn_func_sec_peak,
                     'part': 'Dplus' if cfg['Dmeson'] == 'Ds' else 'Dstar',
                 }
                 histos_avgs[f"h_ry_{cfg_fit['SgnFuncSecPeakLabel']}"] = ROOT.TH1F(f"h_ry_{cfg_fit['SgnFuncSecPeakLabel']}",
                                                                                   f"h_ry_{cfg_fit['SgnFuncSecPeakLabel']}",
-                                                                                  len(cutset_files)-1, 
-                                                                                  array.array('d', [i for i in range(len(cutset_files))]))
+                                                                                  len(cutset_files),
+                                                                                  array.array('d', [-0.5] + [i+0.5 for i in range(len(cutset_files))]))
 
         # Initialize fitter
-        fitter = RawYieldFitter(cfg['Dmeson'], pt_min, pt_max, pt_str, minimizer)
+        fitter = RawYieldFitter(cfg['Dmeson'], pt_min, pt_max, pt_str, minimizer, verbose=True)
         fitter.set_fit_range(cfg_fit['MassFitRanges'][i_pt_bin][0], cfg_fit['MassFitRanges'][i_pt_bin][1])
 
         for i_cutset, cutset_file in enumerate(cutset_files):
@@ -130,7 +133,9 @@ def eval_pt_center(cfg_file_name, minimizer, workers=1):
             sel_string = f"fMlScore0 >= {score_bkg_min} and fMlScore0 < {score_bkg_max} and " \
                          f"fMlScore1 >= {score_fd_min} and fMlScore1 < {score_fd_max} and " \
                          f"fM >= {mass_min} and fM <= {mass_max}"
+            print(f"Selection string: {sel_string}")
             sel_df = df.query(sel_string).reset_index(drop=True)
+            print(f"Total entries: {len(df)}, selected entries: {len(sel_df)}")
             fitter.set_name(f"{pt_str}_{cutset_suffix}")
             fitter.set_data_to_fit_df(sel_df)
             if cfg_fit.get('Rebin'):
@@ -138,7 +143,7 @@ def eval_pt_center(cfg_file_name, minimizer, workers=1):
 
             # Add correlated background if specified
             if cfg.get('corr_bkgs'):
-                fitter.add_corr_bkgs(cfg['corr_bkgs'], sel_string.replace(' and ', ' && '), pt_min, pt_max)
+                fitter.add_corr_bkgs(cfg['corr_bkgs'], f"{cfg['outdir']}/corrbkgs/", sel_string.replace(' and ', ' && '), pt_min, pt_max)
 
             fig, ax = plt.subplots(1, 1, figsize=(12, 10))
             sel_df['fM'].hist(bins=100, alpha=0.5, range=(mass_min, mass_max))
@@ -147,9 +152,6 @@ def eval_pt_center(cfg_file_name, minimizer, workers=1):
             fig.savefig(f"{out_dir_pt}/fits/fM_raw_{cutset_suffix}.pdf", dpi=300, bbox_inches="tight")
 
             fitter.setup()
-
-            if cfg_fit.get('InitPars'):
-                fitter.set_fit_pars(cfg_fit['InitPars'], pt_min, pt_max)
 
             # Prefit the MC prompt enhanced cut to fix the tails, binned fit
             if cfg_fit.get('FixSgnFromMC'):
@@ -160,6 +162,73 @@ def eval_pt_center(cfg_file_name, minimizer, workers=1):
                                           path=f"{out_dir_pt}/", out_file=out_file)
                     fitter.plot_raw_residuals_mc_prefit(path=f"{out_dir_pt}/fM_mc_prefit_residuals_{cutset_suffix}.pdf")
 
+            cfg_pars_dict = None
+            pt_center = 0.5 * (pt_min + pt_max)
+            for setting in cfg_fit.get("InitFitPars", []):
+                # check if this setting applies to the current pT bin
+                if not any(low < pt_center < high for low, high in setting["pt_ranges"]):
+                    continue
+
+                cfg_pars_dict = {'init_pars_sgn': [], 'fix_pars_sgn': []}
+                init_cfgs, fix_cfgs = [], []
+                for par_dict in setting["pars"]:
+                    for par_name, par_cfg in par_dict.items():
+
+                        value = par_cfg[0]
+                        if fix_pars_from_config[i_pt_bin]:
+                            pmin, pmax = par_cfg[1], par_cfg[2]
+                            fix_cfgs.append((0, par_name, value, [value, value]))
+                        else:
+                            pmin = value * 0.9
+                            pmax = value * 1.1
+                            init_cfgs.append((0, par_name, value, [pmin, pmax]))
+
+                        if not isMultitrial:
+                            print(
+                                f"Setting initial fit parameter {par_name} "
+                                f"to {value} ({pmin}, {pmax}) "
+                                f"for pt {pt_min}-{pt_max} GeV/c..."
+                            )
+                if len(init_cfgs) > 0:
+                    cfg_pars_dict['init_pars_sgn'] = []
+                    for par in init_cfgs:
+                        cfg_pars_dict['init_pars_sgn'].append(par)
+                if len(fix_cfgs) > 0:
+                    cfg_pars_dict['fix_pars_sgn'] = []
+                    for par in fix_cfgs:
+                        cfg_pars_dict['fix_pars_sgn'].append(par)
+                break
+
+            if cfg_fit.get('ParsFromFile'):
+                do_init = True
+                if isinstance(cfg_fit['ParsFromFile'], list) and not cfg_fit['ParsFromFile'][i_pt_bin]:
+                    do_init = False  # do not init for this pt bin
+                if cfg_pars_dict is None:
+                    cfg_pars_dict = {'init_pars_sgn': [], 'fix_pars_sgn': []}
+                if do_init:
+                    file_path = cfg_fit['ParsFromFile'][i_pt_bin] if isinstance(cfg_fit['ParsFromFile'], list) else cfg_fit['ParsFromFile']
+                    logger(f"Trying to fix signal parameters from file {file_path} for pt {pt_min} - {pt_max} GeV/c ...", "INFO")
+                    try:
+                        pt_dir = f"pt_{int(pt_min*10)}_{int(pt_max*10)}"
+                        print(f"file_path: {file_path}, pt_dir: {pt_dir}")
+                        fixParsFile = TFile.Open(file_path, 'r')
+                        print(f"fixParsFile: {fixParsFile}")
+                        fixParsHisto = fixParsFile.Get(f'{pt_dir}/hist_signal_func')
+                        fixParsHisto.SetDirectory(0)
+                        print(f"fixParsHisto: {fixParsHisto}")
+                        for iBin in range(1, fixParsHisto.GetNbinsX()+1):
+                            if iBin <= 3:    # skip integral, mean, sigma
+                                continue
+                            binLabel = fixParsHisto.GetXaxis().GetBinLabel(iBin)
+                            binContent = fixParsHisto.GetBinContent(iBin)
+                            print(f"Appending fixed parameter from file: {binLabel} = {binContent}")
+                            cfg_pars_dict['fix_pars_sgn'].append((0, binLabel, binContent, [binContent, binContent]))
+                        fixParsFile.Close()
+                    except Exception as e:
+                        logger(f"Exception {e} caught when trying to fix signal parameters from file {file_path}.", level='ERROR')
+
+            if cfg_pars_dict is not None:
+                fitter.set_fit_pars_from_config(cfg_pars_dict)
             status, converged = fitter.fit()
 
             fitter.plot_fit(False, True, loc=["lower left", "upper left"], \
@@ -176,7 +245,10 @@ def eval_pt_center(cfg_file_name, minimizer, workers=1):
                 continue
 
             s_weights_sgn = fitter.get_sweights_sgn(cfg_fit['SgnFuncLabel'])
-            s_weights_sec_peak = fitter.get_sweights_sgn(cfg_fit['SgnFuncSecPeakLabel']) if cfg_fit.get('InclSecPeak') else None
+            s_weights_sec_peak = None
+            if cfg_fit.get('InclSecPeak'):
+                if cfg_fit['InclSecPeak'][i_pt_bin] if isinstance(cfg_fit['InclSecPeak'], list) else cfg_fit['InclSecPeak']:
+                    s_weights_sec_peak = fitter.get_sweights_sgn(cfg_fit['SgnFuncSecPeakLabel'])
             # Build sWeights
             sgn_weights = np.asarray(s_weights_sgn)
             if s_weights_sec_peak is not None:
@@ -197,7 +269,7 @@ def eval_pt_center(cfg_file_name, minimizer, workers=1):
             if len(sgn_weights) != len(sel_df['fM']):
                 sel_df = sel_df.query("fM > @mass_min and fM < @mass_max").reset_index(drop=True)
 
-            for var in infer_vars:
+            for var, label in zip(infer_vars, infer_vars_labels):
                 print(f"    Drawing {var}")
 
                 # Create figure with two subplots (distros and ratio)
@@ -233,7 +305,7 @@ def eval_pt_center(cfg_file_name, minimizer, workers=1):
 
                 # Styling
                 ax.set_ylabel("Entries")
-                ax.set_xlabel(var)
+                ax.set_xlabel(label)
                 ax.set_title(var)
                 ax.legend()
 
@@ -262,13 +334,25 @@ def eval_pt_center(cfg_file_name, minimizer, workers=1):
         # Compute average pt
         histos_avgs["h_avg_pt"] = ROOT.TH1F("h_avg_pt", "h_avg_pt", 1, 0, 1)
         avg_pt = 0
-        for i_bin in range(len(cutset_files)-1):
-            avg_pt += (histos_avgs["h_fPt_sgn"].GetBinContent(i_bin + 1) * \
-                       histos_avgs[f"h_ry_{cfg_fit['SgnFuncLabel']}"].GetBinContent(i_bin + 1)) / \
-                       histos_avgs[f"h_ry_{cfg_fit['SgnFuncLabel']}"].Integral()
+        total_yield = 0
+        last_ry = 0     # To skip duplicated cutsets
+        for i_bin in range(len(cutset_files)):
+            ry = histos_avgs[f"h_ry_{cfg_fit['SgnFuncLabel']}"].GetBinContent(i_bin + 1)
+            # Compare with tolerance
+            print(f"Checking cutset {i_bin} for pt bin {i_pt_bin}: ry = {histos_avgs[f'h_ry_{cfg_fit['SgnFuncLabel']}'].GetBinContent(i_bin + 1)}, last_ry = {last_ry}")
+            if abs(histos_avgs[f"h_ry_{cfg_fit['SgnFuncLabel']}"].GetBinContent(i_bin + 1) - last_ry) < 10:
+                print(f"Skipping duplicated cutset {i_bin} for pt bin {i_pt_bin}")
+                continue
+            total_yield += ry
+            last_ry = ry
+            avg_pt += (histos_avgs["h_fPt_sgn"].GetBinContent(i_bin + 1) * ry)
+            print(f"Added term: {histos_avgs['h_fPt_sgn'].GetBinContent(i_bin + 1)} * {ry}")
 
+        avg_pt /= total_yield
+        print(f"Computed average pt for pt bin {i_pt_bin}: {avg_pt} (total yield: {total_yield})")
         histos_avgs["h_avg_pt"].SetBinContent(1, avg_pt)
         hist_summary_avg_pt.SetBinContent(i_pt_bin + 1, avg_pt)
+        hist_summary_pt_shifts.SetBinContent(i_pt_bin + 1, avg_pt - hist_summary_pt_shifts.GetBinCenter(i_pt_bin + 1))
 
         # Write histograms to output ROOT file
         out_file.cd()
@@ -276,8 +360,9 @@ def eval_pt_center(cfg_file_name, minimizer, workers=1):
             hist.Write()
         out_file.Close()
 
-    summary_file = TFile.Open(f"{cfg['outdir']}/cutvar_{cfg['suffix']}_{out_dir_type}/ptcenter_{minimizer}/pt_center_summary.root", "recreate")
+    summary_file = TFile.Open(f"{cfg['outdir']}/vn_extr_{cfg['suffix']}_{out_dir_type}/ptcenter_{minimizer}/pt_center_summary.root", "recreate")
     hist_summary_avg_pt.Write()
+    hist_summary_pt_shifts.Write()
     summary_file.Close()
 
 if __name__ == "__main__":

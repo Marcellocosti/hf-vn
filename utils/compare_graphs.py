@@ -326,4 +326,5 @@ for ext in outExtensions:
     else:
         cOut.SaveAs(f'{outFileName}.{ext}')
 
-input("Press enter to exit")
+if not args.b:
+    input("Press enter to exit")

@@ -216,7 +216,7 @@ def ry_vs_cent_figure(pt_bins, cent_intervals, pt_bins_yields, out_file_path):
 # ------------------ Compute Centrality-differential Raw Yields ------------------
 def compute_cent_diff_rys(config, i_pt, pt_min, pt_max, bkg_max, cent_intervals):
     pt_str = f"pt_{int(pt_min*10)}_{int(pt_max*10)}"
-    out_dir_pt = f"{config['outdir']}/cutvar_{config['suffix']}_combined/syst/reso/fits/{pt_str}"
+    out_dir_pt = f"{config['outdir']}/vn_extr_{config['suffix']}_combined/syst/reso/fits/{pt_str}"
     os.makedirs(out_dir_pt, exist_ok=True)
     out_file = TFile.Open(f"{out_dir_pt}/cent_diff_ry_{pt_str}.root", "RECREATE")
 
@@ -315,7 +315,7 @@ if __name__ == "__main__":
 
     # ------------------ Preprocess if requested ------------------
     if config['operations'].get('preprocess', False):
-        config['outdirPrep'] = f"{config['outdir']}/cutvar_{config['suffix']}_combined/syst/reso"
+        config['outdirPrep'] = f"{config['outdir']}/vn_extr_{config['suffix']}_combined/syst/reso"
         with open(args.config, 'w') as f:
             yaml.dump(config, f, sort_keys=False)
 
@@ -352,7 +352,7 @@ if __name__ == "__main__":
                 'raw_yields': [],
                 'raw_yields_uncs': []
             }
-            yields_file = TFile.Open(f"{config['outdir']}/cutvar_{config['suffix']}_combined/syst/reso/fits/{pt_str}/cent_diff_ry_{pt_str}.root", "r")
+            yields_file = TFile.Open(f"{config['outdir']}/vn_extr_{config['suffix']}_combined/syst/reso/fits/{pt_str}/cent_diff_ry_{pt_str}.root", "r")
             yields_hist = yields_file.Get("h_ry_vs_cent")
             for i_bin in range(1, yields_hist.GetNbinsX() + 1):
                 pt_bin_yields['cent_intervals'].append(yields_hist.GetBinCenter(i_bin))
@@ -377,7 +377,7 @@ if __name__ == "__main__":
 
     # ------------------ Weighted and Arithmetic Resolutions ------------------
     avg_resos, ry_histos, single_term_histos, cent_pt_integrated_yields = [], [], [], []
-    out_file = TFile.Open(f"{config['outdir']}/cutvar_{config['suffix']}_combined/syst/reso/syst_reso.root", "RECREATE")
+    out_file = TFile.Open(f"{config['outdir']}/vn_extr_{config['suffix']}_combined/syst/reso/syst_reso.root", "RECREATE")
 
     for i_pt, pt_bin_yields in enumerate(pt_bins_yields):
         tot_yield = sum(pt_bin_yields['raw_yields'])
@@ -421,11 +421,11 @@ if __name__ == "__main__":
     # ------------------ Produce Figures ------------------
     # Weighted vs Arithmetic Resolution
     reso_syst_figure(pt_bins, avg_resos, reference_reso, syst_unc,
-                     f"{config['outdir']}/cutvar_{config['suffix']}_combined/syst/reso/reso_syst.pdf")
+                     f"{config['outdir']}/vn_extr_{config['suffix']}_combined/syst/reso/reso_syst.pdf")
 
     # Raw Yields vs Centrality
     ry_vs_cent_figure(pt_bins, cent_intervals, pt_bins_yields,
-                      f"{config['outdir']}/cutvar_{config['suffix']}_combined/syst/reso/reso_syst_ry_vs_cent.pdf")
+                      f"{config['outdir']}/vn_extr_{config['suffix']}_combined/syst/reso/reso_syst_ry_vs_cent.pdf")
 
     logger("All figures produced successfully", "INFO")
 

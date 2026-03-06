@@ -23,11 +23,11 @@ class VnVsMassFitter : public TObject {
 
 public:
   VnVsMassFitter();
-  VnVsMassFitter(std::string name, TH1F* hMass, TH1F* hvn, Double_t min, Double_t max, Int_t funcMassBkg, Int_t funcMassSgn, Int_t funcvnBkg);
+  VnVsMassFitter(std::string name, TH1F* hMass, TH1F* hvn, Double_t min, Double_t max, Int_t funcMassBkg, Int_t funcMassSgn, Int_t funcvnBkg, Bool_t suppressOutput);
   ~VnVsMassFitter();
 
-  enum ETypeOfBkg{kExpo=0, kLin=1, kPol2=2, kNoBk=3, kPow=4, kPowEx=5, kPoln=6};
-  enum ETypeOfSgn{kGaus=0, k2Gaus=1, kDoubleCBAsymm=3, kDoubleCBSymm=4};
+  enum ETypeOfBkg{kExpo=0, kLin=1, kPol2=2, kConst=3, kPow=4, kPowEx=5, kPoln=6};
+  enum ETypeOfSgn{kGaus=0, k2Gaus=1, kLeftCB=2, kDoubleCBAsymm=3, kDoubleCBSymm=4};
   enum ETypeOfVnRfl{kSameVnSignal=0, kOppVnSignal=1, kSameVnBkg=2, kFreePar=3};
   enum TemplAnchorMode{AnchorToFirst=1, AnchorToSgn=2};
 
@@ -106,15 +106,18 @@ public:
       std::cerr << "WARNING: Unknown anchorMode, defaulting to AnchorToSgn" << std::endl;
       fAnchorTemplsMode = TemplAnchorMode::AnchorToSgn;
     }
-
-    std::cout << "WARNING: Vn parameter of templates will be the same as the signal!" << std::endl;
+    if (!fSuppressOutput) {
+      std::cout << "WARNING: Vn parameter of templates will be the same as the signal!" << std::endl;
+    }
   }
 
   void SetHistoPrefitSgn(TH1F* h, bool fixtoPrefit) {
     fHistoSgnPrefit=(TH1F*)h->Clone("fHistoSgnPrefit");
     fHistoSgnPrefit->SetDirectory(0);
     fFixSgnFromMCPrefit = fixtoPrefit;
-    std::cout << "Histo for signal prefit set!" << std::endl;
+    if (!fSuppressOutput) {
+      std::cout << "Histo for signal prefit set!" << std::endl;
+    }
   }
 
   void InitFunctionPars(std::string funcType);
@@ -162,6 +165,7 @@ public:
   void SetSuppressOutput(Bool_t suppress) {fSuppressOutput=suppress;}
 
   // Double-sided crystal ball functions
+  Double_t LeftCBPDF(double x, double mu, double sigma, double a, double n);
   Double_t DoubleSidedCBAsymmPDF(double x, double mu, double sigma, double a1, double n1, double a2, double n2);
   Double_t DoubleSidedCBSymmPDF(double x, double mu, double sigma, double a, double n);
 
@@ -288,7 +292,9 @@ public:
     return fVnCompsDraw;
   }
   std::vector<double> GetVnTemplates() const {
-    std::cout << "The vn of templates is equal to the one of signal: " << GetVn() << std::endl;
+    if (!fSuppressOutput) {
+      std::cout << "The vn of templates is equal to the one of signal: " << GetVn() << std::endl;
+    }
     std::vector<double> vnPars;
     for(size_t iFunc=0; iFunc<fHistoTemplates.size(); iFunc++) {
       vnPars.push_back(GetVn());
@@ -296,7 +302,9 @@ public:
     return vnPars;
   }
   std::vector<double> GetVnTemplatesUncertainties() const {
-    std::cout << "The vn of templates is equal to the one of signal: " << GetVn() << std::endl;
+    if (!fSuppressOutput) {
+      std::cout << "The vn of templates is equal to the one of signal: " << GetVn() << std::endl;
+    }
     std::vector<double> vnPars;
     for(size_t iFunc=0; iFunc<fHistoTemplates.size(); iFunc++) {
       vnPars.push_back(GetVnUncertainty());
