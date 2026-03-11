@@ -467,7 +467,7 @@ def is_good_trial(trial, max_chi2, min_signif, max_signif):
             signif, chi2, SoverB, mean, sigma, sigma_sec_peak = row['Significance'], row['Chi2'], row['SoverB'], row['Mean'], row['Sigma'], row['SigmaSecPeak']
             if sigma is not None:
                 if sigma > 0.07:
-                    logger(f"Rejecting trial {row['TrialIdx']} due to sigma > 0.05 (sigma = {sigma})", "WARNING")
+                    logger(f"Rejecting trial {row['TrialIdx']} due to sigma > 0.07 (sigma = {sigma})", "WARNING")
                     return False
             if mean is not None:
                 if mean < 1.849 or mean > 1.879:

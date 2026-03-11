@@ -194,7 +194,8 @@ if [ "$do_compile_fitter" = true ]; then
     echo "Compilation done!"
 fi
 
-pt_dirs=($(ls -d "$output_dir"/syst/multitrial/fit/pt_*))
+# pt_dirs=($(ls -d "$output_dir"/syst/multitrial/fit/pt_*))
+pt_dirs=("$output_dir"/syst/multitrial/fit/pt_120_160)
 
 # Find YAML files, sort numerically by trial number, one per line
 for dir in "${pt_dirs[@]}"; do
@@ -235,10 +236,8 @@ for dir in "${pt_dirs[@]}"; do
     fi
 done
 
-# # Only pt_30_35
-# pt_dirs=($(ls -d "$output_dir"/syst/multitrial/fit/pt_30_35))
-
-pt_dirs=("$output_dir"/syst/multitrial/fit/pt_*)
+# pt_dirs=("$output_dir"/syst/multitrial/fit/pt_*)
+pt_dirs=("$output_dir"/syst/multitrial/fit/pt_120_160)
 
 if [ "$do_cms_fits" = true ]; then
     log_file_fits="$dir/log_yieldfits.txt"

@@ -5,11 +5,12 @@ do_compile_fitter=false
 do_cutset_generation=false
 do_fits=false
 do_plots=false
+workers=1
 
 # --- Command Line Argument Handling ---
 if [ "$#" -lt 3 ]; then
     echo "Usage:"
-    echo "  $0 <config_modifies_fit> <config_default> <output_dir> [--do_configs] [--do_fits] [--do_plots]"
+    echo "  $0 <config_modifies_fit> <config_default> <output_dir> [--do_configs] [--do_fits] [--do_plots] [--workers <workers>]"
     exit 1
 fi
 # if [ "$#" -ne 3 ]; then
@@ -40,6 +41,10 @@ while [[ "$#" -gt 0 ]]; do
             ;;
         --do_compile)
             do_compile_fitter=true
+            ;;
+        --workers)
+            workers="$2"
+            shift 2
             ;;
         *)
             echo "Unknown option: $1"
@@ -109,14 +114,7 @@ export ROOT_MAX_THREADS=1
 
 # Export function and necessary variables
 export -f generate_cutset
-# export dir  # make sure $dir is visible inside the function
-
-export n_parallel=14
 export path_to_src="/home/mdicosta/alice/hf-vn/"
-# export do_compile_fitter=false
-# export do_cutset_generation=true
-# export do_fits=true
-# export do_plots=true
 
 mkdir -p "$OUTPUT_DIR/syst/multitrial/bdt"
 
@@ -173,15 +171,15 @@ if [ "$do_fits" = true ]; then
     base_dir=$(realpath "$output_dir/syst/multitrial/bdt")
 
     # Print command that will be launched for debugging
-    echo "Launching parallel execution with n_parallel=$n_parallel on PT bins in $base_dir"
-    echo "Command: find \"$base_dir\" -maxdepth 1 -type d -name \"pt_*\" -print0 | xargs -0 -P \"$n_parallel\" -I {} bash -c 'process_pt_bin \"\$@\"' _ {}"
+    echo "Launching parallel execution with workers=$workers on PT bins in $base_dir"
+    echo "Command: find \"$base_dir\" -maxdepth 1 -type d -name \"pt_*\" -print0 | xargs -0 -P \"$workers\" -I {} bash -c 'process_pt_bin \"\$@\"' _ {}"
 
     # Print output of find \"$base_dir\" -maxdepth 1 -type d -name \"pt_*\" -print0
     echo "PT bins found:"
     find "$base_dir" -maxdepth 1 -type d -name "pt_*" -print0 | xargs -0 -I {} echo "  {}"
 
     find "$base_dir" -maxdepth 1 -type d -name "pt_*" -print0 | \
-    xargs -0 -P "$n_parallel" -I {} bash -c 'process_pt_bin "$@"' _ {}
+    xargs -0 -P "$workers" -I {} bash -c 'process_pt_bin "$@"' _ {}
 
 fi
 

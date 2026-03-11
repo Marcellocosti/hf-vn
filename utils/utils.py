@@ -441,12 +441,8 @@ def get_vnfitter_results(vnFitter, useRefl, useTempl, secPeak, secPeakWidthFrac=
             vn_results['secPeakSigmaVn'] = vn_results['fTotFuncVn'].GetParameter(vn_results['fTotFuncVn'].GetParName(totMassPars + vnSgnPars + vnBkgPars + 2))
             vn_results['secPeakSigmaVnUnc'] = vn_results['fTotFuncVn'].GetParError(vnSgnPars + vnBkgPars + 2)
             # vn_results['vnSecPeak'] = vn_results['fTotFuncVn'].GetParameter(vn_results['fTotFuncVn'].GetParName(vnBkgPars + 1))
-            vn_results['vnSecPeak'] = vn_results['fTotFuncVn'].GetParameter(totMassPars + vnBkgPars + 1)
-            vn_results['vnSecPeakUnc'] = vn_results['fTotFuncVn'].GetParError(totMassPars + vnBkgPars + 1)
-            print(f"totMassPars: {totMassPars}, vnBkgPars: {vnBkgPars}")
-            print(f"vnSecPeak parameter at index {totMassPars + vnBkgPars + 1}: {vn_results['vnSecPeak']} +/- {vn_results['vnSecPeakUnc']}")
-            print(f"vnSecPeak: {vn_results['vnSecPeak']} +/- {vn_results['vnSecPeakUnc']}, iPar: {totMassPars + vnBkgPars + 1}")
-            # quit()
+            vn_results['vnSecPeak'] = vn_results['fTotFuncVn'].GetParameter(totMassPars + vnBkgPars)
+            vn_results['vnSecPeakUnc'] = vn_results['fTotFuncVn'].GetParError(totMassPars + vnBkgPars)
         if 'VnFixedToSgn' in secPeak:
             print("Getting vn of secondary peak fixed to signal vn")
             vn_results['secPeakMeanVn'] = vn_results['fTotFuncVn'].GetParameter(vn_results['fTotFuncVn'].GetParName(totMassPars + 1))
@@ -455,7 +451,7 @@ def get_vnfitter_results(vnFitter, useRefl, useTempl, secPeak, secPeakWidthFrac=
             vn_results['secPeakSigmaVnUnc'] = vn_results['fTotFuncVn'].GetParError(vnSgnPars + 2)
             vn_results['vnSecPeak'] = vn_results['fTotFuncVn'].GetParameter(vn_results['fTotFuncVn'].GetParName(totMassPars))
             vn_results['vnSecPeakUnc'] = vn_results['fTotFuncVn'].GetParError(totMassPars)
-            print(f"vnSecPeak: {vn_results['vnSecPeak']} +/- {vn_results['vnSecPeakUnc']}, iPar: {totMassPars}")
+        print(f"vnSecPeak: {vn_results['vnSecPeak']} +/- {vn_results['vnSecPeakUnc']}, iPar: {totMassPars}")
 
     if useRefl:
         vn_results['fMassRflFunc'] = vnFitter.GetMassRflFunc()

@@ -240,6 +240,8 @@ def produce_trials_bdt_configs(cfg_flow, ref_config_ptbin, setting, multitrial_p
             cfg_variant["cut_variation"]["uncorr_bdt_cut"]["sig"] = [[ref_config_ptbin["cut_variation"]["uncorr_bdt_cut"]["sig"][0][i_cutset],
                                                                       ref_config_ptbin["cut_variation"]["uncorr_bdt_cut"]["sig"][0][i_cutset+1]]]
             cfg_variant["outdir"] = out_dir
+            cfg_variant['v2extraction']['MassFitRanges'] = [cfg_variant['v2extraction']['MassFitRanges']]
+            cfg_variant['projections']['VnVsMassBins'] = [cfg_variant['projections']['VnVsMassBins']]
 
             # Setup operations
             cfg_variant["operations"]['preprocess'] = False
