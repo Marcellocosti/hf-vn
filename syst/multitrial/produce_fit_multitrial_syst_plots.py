@@ -504,7 +504,7 @@ if __name__ == "__main__":
     parser.add_argument('--max_chi2', metavar='number', type=float, default=20.0, help='Maximum reduced chi2 to accept a trial')
     parser.add_argument('--min_signif', metavar='number', type=float, default=0.0, help='Minimum significance to accept a trial')
     parser.add_argument('--max_signif', metavar='number', type=float, default=1000.0, help='Maximum significance to accept a trial')
-    parser.add_argument('--force_prompt_enhanced', action='store_true', help='Force convergence of prompt-enhanced cutsets')
+    parser.add_argument('--force_prompt_enhanced', action='store_true', default=False, help='Force convergence of prompt-enhanced cutsets')
     args = parser.parse_args()
 
     # Print required trials quality cuts
@@ -539,6 +539,7 @@ if __name__ == "__main__":
                 try:
                     trial_result = get_trial_result(trial_dir, cutsets)
                     if args.force_prompt_enhanced:
+                        print(f"Checking prompt-enhanced cutset convergence for trial {os.path.basename(trial_dir)}...")
                         # Retrieve Cutset_0 row
                         cutset_0_row = next((row for row in trial_result if row['V2Type'] == 'Cutset_0'), None)
                         if cutset_0_row is None or cutset_0_row['Significance'] is None:
