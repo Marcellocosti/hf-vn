@@ -780,7 +780,7 @@ def GetCanvas4sub(name, xmins, xmaxs, ymins_mass, ymaxs_mass, ymins_v2, ymaxs_v2
     return canvas, frames
 
 
-def GetCanvas2sub(name, xmins, xmaxs, ymins_mass, ymaxs_mass, ymins_v2, ymaxs_v2, axisnameleft, axisnameright):
+def GetCanvas2sub(name, xmins, xmaxs, ymins_mass, ymaxs_mass, ymins_v2, ymaxs_v2, axisnameleft, axisnameright, n_divisions):
     """
     Creates a canvas with 2 vertical subpads (top and bottom) sharing x-axis.
 
@@ -808,6 +808,12 @@ def GetCanvas2sub(name, xmins, xmaxs, ymins_mass, ymaxs_mass, ymins_v2, ymaxs_v2
         elif i == 1:
             frame = pad.DrawFrame(xmins, ymins_v2, xmaxs, ymaxs_v2, axisnameright)
             frame.GetYaxis().SetDecimals()
+            if n_divisions != -1:
+                frame.GetXaxis().SetNdivisions(n_divisions) #, False)   # control label density
+                # frame.GetXaxis().SetLabelSize(0.045)  # smaller labels
+                # frame.GetXaxis().SetTitleSize(0.05)
+                # frame.GetXaxis().SetTitleOffset(1.0)
+
         frame.SetTitle("")
         frames.append(frame)
 
