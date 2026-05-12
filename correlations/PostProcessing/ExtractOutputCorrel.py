@@ -149,6 +149,7 @@ def ExtractOutputCorrel(cfgFile):
     nPools = config.get("nPools", 10)
     doPoolByPool = config.get("doPoolByPool", False)
     method = config.get("method", "MassBinning")
+    deltaEtaIntegrated = config.get("deltaEtaIntegrated", True)
 
     # Binning operations
     ptBinsCand = config["ptBinsCand"]
@@ -157,8 +158,8 @@ def ExtractOutputCorrel(cfgFile):
     invMassBins = config["invMassBins"]
     nDeltaPhiBins = config.get("nDeltaPhiBins", 32)
     deltaPhiBins = list(np.linspace(-1.5707963705062866, 4.71238911151886, nDeltaPhiBins+1))  # default 64 bins from -pi/2 to 3pi/2
-    rebinsDeltaEta = get_pt_dependent_param(config.get("rebinsDeltaEta", 1), len(ptBinsCand)-1, isList=False)
-    rebinsDeltaPhi = get_pt_dependent_param(config.get("rebinsDeltaPhi", 1), len(ptBinsCand)-1, isList=False)
+    rebinsDeltaEta = get_pt_dependent_param(config.get("rebinDeltaEta", 1), len(ptBinsCand)-1, isList=False)
+    rebinsDeltaPhi = get_pt_dependent_param(config.get("rebinDeltaPhi", 1), len(ptBinsCand)-1, isList=False)
 
     # Optional settings
     doSecPartContamination = config.get("doSecPartContamination", False)
@@ -186,6 +187,7 @@ def ExtractOutputCorrel(cfgFile):
         tempExtractor.SetMethod(CorrelExtractor.kMassBinning)
     elif method == "DeltaPhiBinning":
         tempExtractor.SetMethod(CorrelExtractor.kDeltaPhiBinning)
+        tempExtractor.SetDeltaEtaIntegrated(deltaEtaIntegrated)
         if any(len (invMassBins[i]) > 2 for i in range(len(invMassBins))):
             print(f"[WARNING] Using DeltaPhiBinning method, but invMassBins has more than 2 edges, replace with 2 edges for min and max")
             invMassBins = [[invMassBins[i][0], invMassBins[i][-1]] for i in range(len(invMassBins))]
@@ -199,10 +201,10 @@ def ExtractOutputCorrel(cfgFile):
     tempExtractor.SetDebugLevel(debug)
 
     outdirFull = os.path.join(outdir, f"CorrelExtract_{suffix}")
-    # copy config file
-    shutil.copy(cfgFile, os.path.join(outdirFull, f"config_{suffix}.yaml"))
     if not os.path.exists(outdirFull):
         os.makedirs(outdirFull)
+    # copy config file
+    shutil.copy(cfgFile, os.path.join(outdirFull, f"config_{suffix}.yaml"))
     outdirMass = os.path.join(outdir, "InvMass")
     if not os.path.exists(outdirMass):
         os.makedirs(outdirMass)
@@ -272,7 +274,7 @@ def ExtractOutputCorrel(cfgFile):
         subOutdirPtCand = f"PtCandBin_{int(results['task']['ptMin']*10):.0f}_{int(results['task']['ptMax']*10):.0f}"
         subOutdirPtHad = f"PtHadBin_{int(results['task']['ptHadMin']*10):.0f}_{int(results['task']['ptHadMax']*10):.0f}"
         subOutdirInvMass = f"InvMassBin_{int(results['task']['invMassMin']*1000):.0f}_{int(results['task']['invMassMax']*1000):.0f}"
-        subOutdirDeltaPhi = f"DeltaPhiBin_{int(results['task']['deltaPhiMin']*1000):.0f}_{int(results['task']['deltaPhiMax']*1000):.0f}"
+        subOutdirDeltaPhi = f"DeltaPhiBin_{int(results['task']['deltaPhiMin']*1000):.0f}_{int(results['task']['deltaPhiMax']*1000):.0f}" if results['task']['method'] == "DeltaPhiBinning" else ""
 
         for file in outFiles:
             if not file.GetDirectory(subOutdirPtCand):
@@ -298,20 +300,23 @@ def ExtractOutputCorrel(cfgFile):
             has_mass_plot = False
 
         cMain.cd(1)
-        results['hCorrel_SE_2D'].SetTitle("Raw SE; #Delta#eta; #Delta#phi")
-        results['hCorrel_SE_2D'].Draw("lego 2")
-        ROOT.gPad.SetTheta(30)
-        ROOT.gPad.SetPhi(40)
+        if results.get('hCorrel_SE_2D'):
+            results['hCorrel_SE_2D'].SetTitle("Raw SE; #Delta#eta; #Delta#phi")
+            results['hCorrel_SE_2D'].Draw("lego 2")
+            ROOT.gPad.SetTheta(30)
+            ROOT.gPad.SetPhi(40)
 
         cMain.cd(2)
-        results['hNormalizedCorrel_ME_2D'].SetTitle("Normalized ME; #Delta#eta; #Delta#phi")
-        results['hNormalizedCorrel_ME_2D'].Draw("lego 2")
-        ROOT.gPad.SetTheta(30)
-        ROOT.gPad.SetPhi(40)
+        if results.get('hNormalizedCorrel_ME_2D'):
+            results['hNormalizedCorrel_ME_2D'].SetTitle("Normalized ME; #Delta#eta; #Delta#phi")
+            results['hNormalizedCorrel_ME_2D'].Draw("lego 2")
+            ROOT.gPad.SetTheta(30)
+            ROOT.gPad.SetPhi(40)
 
         cMain.cd(3)
-        results['hCorrectedCorrel'].SetTitle("Corrected Correlation (Gap Applied)")
-        results['hCorrectedCorrel'].Draw("hist e")
+        if results.get('hCorrectedCorrel'):
+            results['hCorrectedCorrel'].SetTitle("Corrected Correlation (Gap Applied)")
+            results['hCorrectedCorrel'].Draw("hist e")
 
         if has_mass_plot:
             cMain.cd(4)
@@ -320,20 +325,28 @@ def ExtractOutputCorrel(cfgFile):
 
         cMain.Write()
 
-        results['hCorrectedCorrel'].Write()
-        results['hNormalizedCorrectedCorrel'].Write()
-        if results.get('hCorrectedPairsMass'): results['hCorrectedPairsMass'].Write()
-        if results.get('hCorrectionRatio'): results['hCorrectionRatio'].Write()
+        if results.get('hCorrectedCorrel'):
+            results['hCorrectedCorrel'].Write()
+        if results.get('hNormalizedCorrectedCorrel'):
+            results['hNormalizedCorrectedCorrel'].Write()
+        if results.get('hCorrectedPairsMass'):
+            results['hCorrectedPairsMass'].Write()
+        if results.get('hCorrectionRatio'):
+            results['hCorrectionRatio'].Write()
         
-        results['hCorrel_SE_2D'].Write()
-        results['hCorrel_ME_2D'].Write()
-        results['hCorrectedCorrel_2D'].Write()
-        results['hNormalizedCorrel_ME_2D'].Write()
+        if results.get('hCorrel_SE_2D'):
+            results['hCorrel_SE_2D'].Write()
+        if results.get('hCorrel_ME_2D'):
+            results['hCorrel_ME_2D'].Write()
+        if results.get('hCorrectedCorrel_2D'):
+            results['hCorrectedCorrel_2D'].Write()
+        if results.get('hNormalizedCorrel_ME_2D'):
+            results['hNormalizedCorrel_ME_2D'].Write()
 
         outOriginalHistFile.cd(subOutdir)
         
-        pool_SE = results['PoolVec_OriginalCorrel_SE_2D']
-        pool_ME = results['PoolVec_OriginalCorrel_ME_2D']
+        pool_SE = results.get('PoolVec_OriginalCorrel_SE_2D', [])
+        pool_ME = results.get('PoolVec_OriginalCorrel_ME_2D', [])
         
         for i, (hSE, hME) in enumerate(zip(pool_SE, pool_ME)):
             cPoolName = f"cPool_Original_{i}_{subOutdir.replace('/', '_')}"

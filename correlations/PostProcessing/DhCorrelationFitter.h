@@ -73,11 +73,16 @@ class DhCorrelationFitter
     fv2Dmeson = v2Dmeson;
   }
   void SetLMTemplate(TH1D* tempHisto) { fTempHisto = tempHisto; }
+  void SetRyTrigger(Double_t val, Double_t err) { fRyTrigger = val; fRyTriggerErr = err; }
+  void SetLMRyTrigger(Double_t val, Double_t err) { fLMRyTrigger = val; fLMRyTriggerErr = err; }
+  void SetWithPedLM(Bool_t withPed) { fWithPedLM = withPed; }
+  void SetFixLMFactor(Bool_t fixFactor) { fFixLMFactor = fixFactor; }
 
   /// Functions for fitting
   void Fitting(Bool_t drawSplitTerm = kTRUE, Bool_t useExternalPars = kFALSE);
   void SetFitFunction();
   Double_t TotalTemplateFitFunction(Double_t* x, Double_t* par);
+  Double_t TemplateFitFunctionWPed(Double_t* x, Double_t* par);
   Double_t TemplateFitFunction(Double_t* x, Double_t* par);
   void CalculateYieldsAboveBaseline();
   void FitBaselineWv2();
@@ -150,6 +155,8 @@ class DhCorrelationFitter
   Bool_t fShiftBaselineUp;   // To shift the baseline up of its statistical uncertainty
   Bool_t fShiftBaselineDown; // To shift baseline down of its statistical uncertainty
   Bool_t fIsTotal;           // Total range of 2*pi in the azimuthal correlation distribution
+  Bool_t fWithPedLM;         // If true, LM template function includes pedestal (TemplateFitFunctionWPed); if false, no pedestal (TemplateFitFunction)
+  Bool_t fFixLMFactor;       // If true, fix the LM scale factor (parameter 0); if false, let it float
 
   FunctionType fTypeOfFitFunc; // Type of fit function
 
@@ -175,6 +182,10 @@ class DhCorrelationFitter
   Double_t fv2AssocPart;        // v2 associated particles
   Double_t fv2Dmeson;           // v2 of D mesons
   Double_t fv2Delta;            // v2 of D mesons * v2 assoc part
+  Double_t fRyTrigger;          // raw yield of trigger (D meson) from mass fit
+  Double_t fRyTriggerErr;       // uncertainty of fRyTrigger
+  Double_t fLMRyTrigger;        // raw yield of trigger (D meson) from mass fit (LM template)
+  Double_t fLMRyTriggerErr;     // uncertainty of fLMRyTrigger
 
   Double_t* fExtParsVals;      // Fit parameters initial values
   Double_t* fExtParsLowBounds; // Fit parameters lower bounds

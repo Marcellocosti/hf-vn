@@ -288,7 +288,7 @@ def interface_raw_yield_fitter(config_path):
             futures = {executor.submit(fit_task, task, config["fitConfig"], inFileMassPath, doMassFit=True): task for task in mass_tasks}
             for future in as_completed(futures):
                 result = future.result()
-                ry_trigger[(result['iPtCand'], result['iPtHad'])] = result['ry']
+                ry_trigger[(result['iPtCand'], result['iPtHad'])] = (result['ry'], result['ry_unc'])
                 del future
                 bar()
             futures.clear()
@@ -301,8 +301,14 @@ def interface_raw_yield_fitter(config_path):
         subdir_had = f"PtHadBin_{int(ptBinsHad[iPtHad]*10)}_{int(ptBinsHad[iPtHad+1]*10)}"
         outROOT.mkdir(subdir_pt + "/" + subdir_had)
         outROOT.cd(subdir_pt + "/" + subdir_had)
-        histo.Scale(1.0 / ry_trigger[(iPtCand, iPtHad)] if ry_trigger[(iPtCand, iPtHad)] != 0 else 1.0)
+        # histo.Scale(1.0 / ry_trigger[(iPtCand, iPtHad)] if ry_trigger[(iPtCand, iPtHad)] != 0 else 1.0)
         histo.Write('hPairsYields_vs_DeltaPhi')
+        # save ry_trigger as a 1-bin histogram in the same directory
+        ry, ry_unc = ry_trigger.get((iPtCand, iPtHad), (0.0, 0.0))
+        hRy = TH1D("ry_trigger", "ry_trigger", 1, 0., 1.)
+        hRy.SetBinContent(1, ry)
+        hRy.SetBinError(1, ry_unc)
+        hRy.Write()
     outROOT.Close()
 
 if __name__ == "__main__":

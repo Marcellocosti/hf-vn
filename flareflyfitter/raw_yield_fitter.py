@@ -746,6 +746,10 @@ class RawYieldFitter:
             latex.SetTextFont(42)
             latex.SetTextSize(0.045)
             latex.DrawLatex(0.5, 0.94, canva_title)
+            fit_info, _, _, _, _ = self.get_fit_info()
+            ry_text = f"Signal: {fit_info['sgn']['ry']:.2f} #pm {fit_info['sgn']['ry_unc']:.2f}"
+            print(f"Fit info[Debug]: {fit_info}")
+            latex.DrawLatex(0.5, 0.88, ry_text)
 
             canvas.Update()
             canvas.SaveAs(path)

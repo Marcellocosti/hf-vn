@@ -625,18 +625,23 @@ if (fDebug > 0) {
   hSparse->GetAxis(kDeltaEta)->SetRangeUser(fDeltaEtaLeftMin+0.01, fDeltaEtaRightMax-0.01); // axis3: deltaEta
 
   // Project to 2D histogram for correlation, and 2D histogram for mass vs deltaEta if needed for kDeltaPhiBinning method
-  hFinal = (TH2D*)hSparse->Projection(kDeltaPhi, kDeltaEta);            // axis4: deltaPhi, axis3: deltaEta
+  hFinal = (TH2D*)hSparse->Projection(kDeltaPhi, kDeltaEta);            // axis4: deltaPhi, axis3: deltaEta Y X
+
+  // std::cout << "Number of bins before rebinning: " << hFinal->GetNbinsX() << " (deltaEta), " << hFinal->GetNbinsY() << " (deltaPhi)" << std::endl;
+  // std::cout << "fRebinAxisDeltaEta: " << fRebinAxisDeltaEta << ", fRebinAxisDeltaPhi: " << fRebinAxisDeltaPhi << std::endl;
+  // rebin axes deltaEta and deltaPhi
+  if (fRebinAxisDeltaEta > 1 || fRebinAxisDeltaPhi > 1) {
+    hFinal->Rebin2D(fRebinAxisDeltaEta, fRebinAxisDeltaPhi); // X Y
+  }
+  // std::cout << "Number of bins after rebinning: " << hFinal->GetNbinsX() << " (deltaEta), " << hFinal->GetNbinsY() << " (deltaPhi)" << std::endl;
+  // std::exit(0);
+
   if (SEorME == kME) CalculateNormaliztionFactorME(hFinal, pool);
   if(fMethod == kDeltaPhiBinning) {
     hSparse->GetAxis(kDeltaPhi)->SetRangeUser(fDeltaPhiBins[0], fDeltaPhiBins[1]); // axis4: deltaPhi
   }
   hFinalMass = (TH2D*)hSparse->Projection(kMass, kDeltaEta);            // axis5: invMass, axis3: deltaEta
-
-  // rebin axes deltaEta and deltaPhi
-  if (fRebinAxisDeltaEta > 1 || fRebinAxisDeltaPhi > 1) {
-    hFinal->Rebin2D(fRebinAxisDeltaPhi, fRebinAxisDeltaEta);
-    if (fMethod == kDeltaPhiBinning) hFinalMass->RebinY(fRebinAxisDeltaEta);
-  }
+  if (fMethod == kDeltaPhiBinning) hFinalMass->RebinY(fRebinAxisDeltaEta);
 
   // set to 0 for the inner deltaEta gap
   if (fDeltaEtaLeftMax != 0 && fDeltaEtaRightMin != 0) {
