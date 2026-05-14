@@ -118,7 +118,7 @@ final_states = {
     },
     "LcToPPiPi": {
       "flag_mc_rec": 19,
-      "br_sim_ppref": 1.25e-1,   
+      "br_sim_ppref": 4.85e-1, # 1.25e-1 from non-resonant + 3.6e-1 from p K0S,   
       "br_sim_pbpb": 2.5e-1,
       "br_sim_oo": 1.25e-1,
       "br_pdg": 4.67e-3,
