@@ -103,6 +103,8 @@ class DhCorrelationFitter
   Double_t Getv2Dmeson() { return fFit->GetParameter("v_{2} D meson"); }
   Double_t Getv2Delta() { return fFit->GetParameter("v_{2} delta"); }
   Double_t Getv2Delta_lm() { return fFit->GetParameter("v_{2}_lm delta"); }
+  Double_t GetLMFactor() { return fFit->GetParameter("F (LM Scale)"); }
+  Double_t GetLMFactorError() { return fFit->GetParError(fFit->GetParNumber("F (LM Scale)")); }
   Double_t GetNSSigmaError() { return fFit->GetParError(fFit->GetParNumber("NS #sigma")); } // TODO: case kConstThreeGausPeriodicity
   Double_t GetASSigmaError() { return fFit->GetParError(fFit->GetParNumber("AS #sigma")); } // TODO: case kConstThreeGausPeriodicityAS
   Double_t GetNSYieldError() { return fFit->GetParError(fFit->GetParNumber("NS Y")); }

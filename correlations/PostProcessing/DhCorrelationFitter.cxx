@@ -827,6 +827,7 @@ void DhCorrelationFitter::SetFitFunction()
           if (fLo < 0.01) fLo = 0.01;
           printf("[INFO][NOT DONE] DhCorrelationFitter: F scale init=%.3f  limits=[%.3f, %.3f]  (ryRatio, errors from fit)\n",
                 normalizedMean / normalizedTempMean, fLo, fHi);
+          // fFit->SetParLimits(0, fLo, fHi);
         }
       } else {
         std::cout << "[WARNING] DhCorrelationFitter: Cannot set initial F (LM Scale) from raw-yield ratio due to non-positive values (fRyTrigger=" << fRyTrigger << ", fLMRyTrigger=" << fLMRyTrigger << "). Setting default initial value to 1.1." << std::endl;
@@ -838,11 +839,11 @@ void DhCorrelationFitter::SetFitFunction()
       fFit->SetParameter(3, 0.01);
       // fFit->SetParameter(4, 0.01);
 
-      fLM = new TF1("fLM", this, &DhCorrelationFitter::TemplateFitFunctionWPed, fMinCorr, fMaxCorr, 2);
-      fFlow = new TF1("fFlow", "[0] * (1 + 2*[1]*TMath::Cos(2*x) + 2*[2]*TMath::Cos(3*x))", fMinCorr, fMaxCorr);
-      fv2 = new TF1("fv2", "[0] + 2*[0]*[1]*TMath::Cos(2*x)", fMinCorr, fMaxCorr);
-      fv3 = new TF1("fv3", "[0] + 2*[0]*[1]*TMath::Cos(3*x)", fMinCorr, fMaxCorr);
-      fPed = new TF1("fPed", "[0]", fMinCorr, fMaxCorr);
+      fLM = new TF1("fLM", this, &DhCorrelationFitter::TemplateFitFunctionWPed, fMinCorr, fMaxCorr, 2); // LM
+      fFlow = new TF1("fFlow", "[0] * (1 + 2*[1]*TMath::Cos(2*x) + 2*[2]*TMath::Cos(3*x))", fMinCorr, fMaxCorr); // HM
+      fv2 = new TF1("fv2", "[0] + 2*[0]*[1]*TMath::Cos(2*x)", fMinCorr, fMaxCorr); // v2 component
+      fv3 = new TF1("fv3", "[0] + 2*[0]*[1]*TMath::Cos(3*x)", fMinCorr, fMaxCorr); // v3 component
+      fPed = new TF1("fPed", "[0]", fMinCorr, fMaxCorr); // Pedestal
 
       break;
   }
@@ -879,7 +880,13 @@ Double_t DhCorrelationFitter::TemplateFitFunction(Double_t* x, Double_t* par)
   if (fWithPedLM) {
     return par[0] * fSpline->Eval(x[0]); 
   } else {
-    return par[0] * (fSpline->Eval(x[0]) - fBaseline);
+    if (fSpline->Eval(x[0]) < fBaseline) {
+      // printf("[WARNING] DhCorrelationFitter::TemplateFitFunction(): Spline value (%.6f) is below baseline (%.6f) at x=%.3f! Setting template contribution to 0 for this point.\n",
+            //  fSpline->Eval(x[0]), fBaseline, x[0]);
+      return 0.0;
+    } else {
+      return par[0] * (fSpline->Eval(x[0]) - fBaseline);
+    }
   }
 }
 

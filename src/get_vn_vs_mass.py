@@ -46,9 +46,13 @@ if not os.path.exists(lib):
 
 # Load the library once
 if not hasattr(gSystem, "_vnfitter_loaded"):
-    script_dir = os.path.dirname(os.path.realpath(__file__))
-    gSystem.CompileMacro(f"{script_dir}/../invmassfitter/VnVsMassFitter.cxx", "kO")
-    gSystem.CompileMacro(f"{script_dir}/../invmassfitter/InvMassFitter.cxx", "kO")
+    if os.path.exists(lib):
+        print(f"Loading existing library: {lib}")
+        gSystem.Load(lib)
+    else:
+        print(f"Library {lib} not found — compiling with ACLiC...")
+        gSystem.CompileMacro(os.path.join(src_dir, "VnVsMassFitter.cxx"), "kO")
+        gSystem.CompileMacro(os.path.join(src_dir, "InvMassFitter.cxx"), "kO")
     gSystem._vnfitter_loaded = True
 
 from ROOT import InvMassFitter, VnVsMassFitter
@@ -83,8 +87,10 @@ def get_vn_vs_mass(fitConfigFileName, inFileName, batch, isMultitrial):
     particleName = config['Dmeson']
     harmonic = config.get('harmonic', 2) # default is v2
     
-    # Read fit configuration
-    configfit = config['v2extraction']
+    # Read fit configuration — support both "v2extraction" and "fitConfig" keys
+    configfit = config.get('v2extraction', config.get('fitConfig', {}))
+    if not configfit:
+        logger('ERROR: neither "v2extraction" nor "fitConfig" found in YAML.', level='ERROR')
     fixSigma = configfit.get('FixSigma', 0)
     fixSigmaFromFile = configfit.get('FixSigmaFromFile', '')
     fixMean = configfit.get('FixMean', 0)

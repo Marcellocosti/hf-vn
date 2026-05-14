@@ -39,7 +39,7 @@ ROOT.gErrorIgnoreLevel = ROOT.kWarning
 # Compile DhCorrelationFitter C++ class
 # ===================================================================
 ROOT.gSystem.AddIncludePath("-I/home/wuct/Software/miniforge3/envs/alice/include")
-_fitter_cxx = "/home/wuct/ALICE/reps/hf-vn-working/correlations/PostProcessing/DhCorrelationFitter.cxx"
+_fitter_cxx = os.path.join(os.path.dirname(__file__), "DhCorrelationFitter.cxx")
 ROOT.gSystem.CompileMacro(_fitter_cxx, "kO")
 from ROOT import DhCorrelationFitter
 
@@ -72,7 +72,7 @@ def set_th1_style(histo, title, x_title, y_title,
     histo.SetMarkerSize(marker_size)
     histo.SetLineColor(line_color)
     histo.SetLineWidth(line_width)
-    histo.GetXaxis().SetTitleOffset(1.3)
+    histo.GetXaxis().SetTitleOffset(0.8)
     histo.GetYaxis().SetTitleOffset(1.3)
     histo.GetXaxis().SetTitleSize(0.045)
     histo.GetYaxis().SetTitleSize(0.045)
@@ -307,6 +307,7 @@ def fit_correl(cfg_path):
         n_mass_local = 1
 
     h_v2_delta = [[None] * n_mass_local for _ in range(n_pt_had)]
+    h_lm_factor = [None] * n_pt_had
 
     for i_pt_had in range(n_pt_had):
         for i_mass_local in range(n_mass_local):
@@ -314,6 +315,11 @@ def fit_correl(cfg_path):
             h = ROOT.TH1D(f"hv2Delta_{tag}", "", n_pt_cand, pt_cand_edges_arr)
             h.SetDirectory(ROOT.nullptr)
             h_v2_delta[i_pt_had][i_mass_local] = h
+
+        # LM Factor: single 1D histogram per ptHad (no mass binning)
+        h_lm = ROOT.TH1D(f"hLMFactor_PtBinAssoc{i_pt_had + 1}", "", n_pt_cand, pt_cand_edges_arr)
+        h_lm.SetDirectory(ROOT.nullptr)
+        h_lm_factor[i_pt_had] = h_lm
 
     # ============== MAIN FIT LOOP ==============
     # For use_pairs_file (DeltaPhiBinning): iterate over ptCand internally
@@ -484,6 +490,9 @@ def fit_correl(cfg_path):
                 corr_fitter.Fitting(True, True)
                 # canvas.Update()
                 h_fit.GetYaxis().SetRangeUser(h_fit.GetMinimum()*0.96, h_fit.GetMaximum() * 1.05)
+                set_th1_style(h_fit, f"",
+                                "#Delta#phi [rad]",
+                                "#frac{dN^{assoc}}{d#Delta#phi} [rad^{-1}]")
                 canvas.Update()
 
                 # ---- Get v2_delta result ---------------------------------
@@ -498,6 +507,14 @@ def fit_correl(cfg_path):
                 h_v2_delta[i_pt_had][mass_idx].SetBinContent(bin_idx, v2_val)
                 h_v2_delta[i_pt_had][mass_idx].SetBinError(bin_idx, v2_err)
 
+                # ---- Fill LM Factor histogram (par 0) ---------------------
+                if use_template and mass_i_local == 0:
+                    lm_val = corr_fitter.GetLMFactor()
+                    lm_err = corr_fitter.GetLMFactorError()
+                    print(f"      LM Factor = {lm_val:.6f} +/- {lm_err:.6f}")
+                    h_lm_factor[i_pt_had].SetBinContent(bin_idx, lm_val)
+                    h_lm_factor[i_pt_had].SetBinError(bin_idx, lm_err)
+
                 # ---- Finish drawing the canvas ---------------------------
                 set_th1_style(h_corr, "",
                               "#Delta#phi [rad]",
@@ -511,9 +528,11 @@ def fit_correl(cfg_path):
                 pt_text.SetBorderSize(0)
                 pt_text.AddText(
                     0., 0.8,
-                    f"{pt_cand_min:.0f} < p_{{T}}^{{{dmeson_label}}} < "
-                    f"{pt_cand_max:.0f} GeV/c, "
-                    f"p_{{T}}^{{assoc}} > {pt_had_min:.1f} GeV/c")
+                    f"{pt_cand_min:.1f} < p_{{T}}^{{{dmeson_label}}} < "
+                    f"{pt_cand_max:.1f} GeV/c, "
+                    f"{pt_had_min:.1f} < p_{{T}}^{{assoc}} < {pt_had_max:.1f} GeV/c, "
+                    f"Mass[{mass_min:.3f}, {mass_max:.3f}] GeV/c^{{2}}")
+                pt_text.SetTextAlign(22)
                 pt_text.Draw("same")
 
                 png_path = os.path.join(
@@ -550,6 +569,12 @@ def fit_correl(cfg_path):
             h.SetDirectory(out_file)
             out_file.cd()
             h.Write()
+    # Write LM Factor histograms (flat — one per ptHad, no mass binning)
+    for i_pt_had in range(n_pt_had):
+        h_lm = h_lm_factor[i_pt_had]
+        h_lm.SetDirectory(out_file)
+        out_file.cd()
+        h_lm.Write()
     # todo: to be removed
     for i_mass_out in range(n_mass_out):
         for i_pt_had in range(n_pt_had):

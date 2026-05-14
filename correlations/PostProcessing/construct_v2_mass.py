@@ -66,12 +66,18 @@ def build_mass_v2(cfg_path):
 
     pt_bins_cand = [float(ptBinCand) for ptBinCand in config["ptBinsCand"]]
     pt_bins_had  = [float(ptBinHad) for ptBinHad in config["ptBinsHad"]]
-    inv_mass_bins = config["invMassBins"]
+    inv_mass_bins_raw = config["invMassBins"]
     n_pt_cand, n_pt_had = len(pt_bins_cand) - 1, len(pt_bins_had) - 1
 
-    #TODO: pt differential mass bins
-    mass_edges = [float(x) for x in (inv_mass_bins[0] if len(inv_mass_bins) > 0 else inv_mass_bins[-1])]
-    n_mass_bins = len(mass_edges) - 1
+    # Build per-pt-cand mass bin edges (matching FitCorrel logic)
+    mass_edges_per_pt = []
+    for i_pt in range(n_pt_cand):
+        if i_pt < len(inv_mass_bins_raw):
+            edges = [float(x) for x in inv_mass_bins_raw[i_pt]]
+        else:
+            print(f"[WARNING] invMassBins has only {len(inv_mass_bins_raw)}, but {n_pt_cand} pt cand bins — using last entry for remaining bins")
+            edges = [float(x) for x in inv_mass_bins_raw[-1]]
+        mass_edges_per_pt.append(edges)
 
     file_mass = ROOT.TFile.Open(str(inv_mass_path))
     h_mass_vs_pt = file_mass.Get("hMassVsPt")
@@ -90,6 +96,11 @@ def build_mass_v2(cfg_path):
         h_masses, h_mass_vs_v2s = [], []
         for i_pt_cand, (pt_cand_min, pt_cand_max) in enumerate(zip(pt_bins_cand[:-1], pt_bins_cand[1:])):
             pt_cand_str = f"PtCand{int(pt_cand_min*10):02d}to{int(pt_cand_max*10):02d}"
+
+            # Use this pt cand bin's mass edges
+            mass_edges = mass_edges_per_pt[i_pt_cand]
+            n_mass_bins = len(mass_edges) - 1
+
             tmp = h_mass_vs_pt.Clone(f"tMass_{pt_cand_str}_{pt_had_str}")
             h_masses.append(get_mass_distribution(tmp, pt_cand_min, pt_cand_max))
 
@@ -100,8 +111,12 @@ def build_mass_v2(cfg_path):
                 hn = f"hv2Delta_PtBinAssoc{i_pt_had+1}_InvMassBin{i_ml+1}"
                 hv = h_v2_deltas.get(hn)
                 if hv:
+                    # hv2Delta is a 1D histogram with n_pt_cand bins (one per pt cand).
+                    # For MassBinning, only the bin matching i_pt_cand is filled.
                     h_mass_vs_v2.SetBinContent(i_ml+1, hv.GetBinContent(i_pt_cand+1))
                     h_mass_vs_v2.SetBinError(i_ml+1, hv.GetBinError(i_pt_cand+1))
+                else:
+                    print(f"  [WARNING] {hn} not found in FinalPlots — skipping mass bin {i_ml+1} for ptCand {i_pt_cand}")
             h_mass_vs_v2.Scale(1.0 / v2_delta_hh)
             h_mass_vs_v2s.append(h_mass_vs_v2)
 
@@ -187,8 +202,8 @@ def extract_ry_trigger(cfg_path):
         fitter.plot_fit(logy=False, path=str(extract_dir / f"ry_trigger_fit_pc{i_pt_cand}.png"), show_extra_info=False)
         fit_info, _, _, _, _ = fitter.get_fit_info()
         for i_ph in range(n_pt_had):
-            results[(i_pt_cand, i_ph)] = (fit_info['sgn']['ry'], fit_info['sgn']['ry_unc'])
-        print(f"  ptCand [{pt_cand_min:.1f}, {pt_cand_max:.1f}]: ry_trigger = {fit_info['sgn']['ry']:.0f} ± {fit_info['sgn']['ry_unc']:.0f}")
+            results[(i_pt_cand, i_ph)] = (fit_info['sgn']['ry'], fit_info['sgn']['ry_unc'], total_count)
+        print(f"  ptCand [{pt_cand_min:.1f}, {pt_cand_max:.1f}]: ry_trigger = {fit_info['sgn']['ry']:.0f} ± {fit_info['sgn']['ry_unc']:.0f}, total_count = {total_count:.0f}")
 
     file_mass.Close()
 
@@ -203,7 +218,7 @@ def extract_ry_trigger(cfg_path):
                 out_file.mkdir(pt_cand_str); out_file.cd(pt_cand_str)
                 if not ROOT.gDirectory.GetDirectory(pt_had_str):
                     ROOT.gDirectory.mkdir(pt_had_str)
-            ry, ry_err = results.get((i_pt_cand, i_pt_had), (0., 0.))
+            ry, ry_err, total_count = results.get((i_pt_cand, i_pt_had), (0., 0., 0.))
             hry = ROOT.TH1D("ry_trigger", "", 1, 0., 1.)
             # hry.SetBinContent(1, ry); hry.SetBinError(1, ry_err)
             # Use total count instead of raw yield for mass binning
