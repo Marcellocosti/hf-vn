@@ -52,13 +52,6 @@ DhCorrelationExtraction::DhCorrelationExtraction() : // default constructor
   fDeltaEtaLeftMax(1.),
   fDeltaEtaRightMin(-1.),
   fDeltaEtaRightMax(1.),
-  /*fFileSecPartName(""),
-  fDirSecPartName(""),
-  fHistoPrimaryPartName(""),
-  fHistoAllPartName(""),
-  fdoRebinSecPart(kFALSE),
-  fdoSubtractSoftPiME(kFALSE),
-  fdoSecPartContamination(0),*/
 
   // Non-copyable properties-----------------------------------------------------------------------------------//
   fFileSE(0x0),
@@ -73,8 +66,6 @@ DhCorrelationExtraction::DhCorrelationExtraction() : // default constructor
   fMethod(kMassBinning),
   fRebinAxisDeltaEta(1),
   fRebinAxisDeltaPhi(1),
-  /*fFileSecPart(0x0),
-  fDirSecPart(0x0),*/
 
   // Results---------------------------------------------------------------------------------------------------------------//
   fMassVsPt_2D(0x0), // copyable properties, for trigger normalization
@@ -91,10 +82,7 @@ DhCorrelationExtraction::DhCorrelationExtraction() : // default constructor
   fOriginalCorrel_SE_2D(0x0),
   fOriginalCorrel_ME_2D(0x0),
   fOriginalMassVsDeltaEta_2D(0x0),
-  /*fCorrel_PrimaryPart(0x0),         // secondary particle contamination histograms
-  fCorrel_AllPart(0x0),
-  fFracSecondaryPart(0x0),
-  fCorrectedCorrHisto_Before_SecPart(0x0),*/
+
   // --- original data histograms, debug level 2 ---
   fPoolVec_OriginalCorrel_SE_2D(),
   fPoolVec_OriginalCorrel_ME_2D(),
@@ -105,8 +93,6 @@ DhCorrelationExtraction::DhCorrelationExtraction() : // default constructor
   fPoolVec_RawMassVsDeltaEta_2D(),
   fPoolVec_CorrectedMass(),
   fPoolVec_CorrectionRatio()
-  /*fOriginalCorrel_PrimaryPart(0x0), // secondary particle contamination histograms
-  fOriginalCorrel_AllPart(0x0)*/
 {
 }
 
@@ -205,6 +191,16 @@ DhCorrelationExtraction DhCorrelationExtraction::CreateDefault() {
     return instance;
 }
 
+DhCorrelationExtraction DhCorrelationExtraction::CreateCustom(const TString& dirNameSE, const TString& dirNameME, const TString& massSparseName) {
+    DhCorrelationExtraction instance;
+    instance.SetDirNameSE(dirNameSE);
+    instance.SetDirNameME(dirNameME);
+    instance.SetCorrelSparseNameSE("hSparseCorrelationsSECharmHad");
+    instance.SetCorrelSparseNameME("hSparseCorrelationsMECharmHad");
+    instance.SetMassSparseName(massSparseName);
+    return instance;
+}
+
 DhCorrelationExtraction* DhCorrelationExtraction::CreateCopy(const DhCorrelationExtraction& source) {
     return new DhCorrelationExtraction(source);
 }
@@ -274,9 +270,6 @@ Bool_t DhCorrelationExtraction::ExtractCorrelations()
     // Retrieve 2D plots for SE and ME, signal and bkg regions, for each pTbin and pool
     hSE_2D_Raw[iPool] = ProjCorrelHisto(kSE, iPool);
     hME_2D_Raw[iPool] = ProjCorrelHisto(kME, iPool);
-    // hSE_2D_Raw[iPool]->Sumw2();
-    // hME_2D_Raw[iPool]->Sumw2();
-
 
     hME_2D_Normalized[iPool] = reinterpret_cast<TH2D*>(hME_2D_Raw[iPool]->Clone(Form("hNormalizedCorrel_ME_2D_Pool%d", iPool)));
     // Normalize ME plots for the entries in (deltaEta, deltaPhi) = (0, 0)
@@ -395,83 +388,9 @@ Bool_t DhCorrelationExtraction::ExtractCorrelations()
   delete h1D_CorrectedCorrel;
   h1D_CorrectedCorrel = nullptr;
 
-  /*// Secondary particle contamination
-  if (fdoSecPartContamination) {
-    h1D_PrimaryPartCorr = ProjCorrelHistoSecondaryPart(kPrimaryPart, fPtCandBins[0], fPtCandBins[1], fPtHadBins[0], fPtHadBins[1]);
-    h1D_AllPartCorr = ProjCorrelHistoSecondaryPart(kAllPart, fPtCandBins[0], fPtCandBins[1], fPtHadBins[0], fPtHadBins[1]);
-    h1D_PrimaryPartCorr->Sumw2();
-    h1D_AllPartCorr->Sumw2();
-    if (fdoRebinSecPart && (fRebinAxisDeltaPhi > 1 || fRebinAxisDeltaEta > 1)) {
-      h1D_PrimaryPartCorr->RebinX(fRebinAxisDeltaPhi); // Xaxis: deltaPhi
-      h1D_AllPartCorr->RebinX(fRebinAxisDeltaPhi);
-    }
-
-    h1D_SecPartFrac = reinterpret_cast<TH1D*>(h1D_PrimaryPartCorr->Clone(Form("hCorrRatio_PtD%.0fto%.0f_PtHad%.0fto%.0f", fPtCandBins[0], fPtCandBins[1], fPtHadBins[0], fPtHadBins[1])));
-    h1D_SecPartFrac->Sumw2();
-    h1D_SecPartFrac->Divide(h1D_PrimaryPartCorr, h1D_AllPartCorr, 1., 1., "B");
-    SetTH1HistoStyle(h1D_SecPartFrac, Form("%.0f < p_{T} < %.0f GeV/c", fPtCandBins[0], fPtCandBins[1]), "#Delta#phi [rad]", "#frac{primary part.}{part. selected}");
-
-    if (fDebug >= 1) {
-      fFracSecondaryPart = reinterpret_cast<TH1D*>(h1D_SecPartFrac->Clone(Form("hFracSecondaryPart_PtD%.0fto%.0f_PtHad%.0fto%.0f", fPtCandBins[0], fPtCandBins[1], fPtHadBins[0], fPtHadBins[1])));
-      fCorrectedCorrHisto_Before_SecPart = reinterpret_cast<TH1D*>(h1D_Norm->Clone(Form("hCorrectedCorr_Before_SecPart_PtCand%.0fto%.0f_PtAssoc%.0fto%.0f_InvMass%.0fto%.0f", fPtCandBins[0], fPtCandBins[1], fPtHadBins[0], fPtHadBins[1], fInvMassBins[0], fInvMassBins[1])));
-    }
-  
-    h1D_Norm_SecPart = reinterpret_cast<TH1D*>(h1D_Norm->Clone("h1D_Norm_SecPart"));
-    h1D_Norm_SecPart->Sumw2();
-    Int_t nBinsPhi = h1D_Norm_SecPart->GetNbinsX();
-    if (nBinsPhi != h1D_SecPartFrac->GetNbinsX()) {
-      std::cerr << "[ERROR]: nBinsPhi different between h1D_Norm and h1D_SecPartFrac" << std::endl;
-      return kFALSE;
-    }
-    h1D_Norm_SecPart->Multiply(h1D_SecPartFrac);
-
-    // clean up
-    delete h1D_PrimaryPartCorr;
-    h1D_PrimaryPartCorr = nullptr;
-    delete h1D_AllPartCorr;
-    h1D_AllPartCorr = nullptr;
-    delete h1D_SecPartFrac;
-    h1D_SecPartFrac = nullptr;
-  }
-
-  // set 1D plots (Signal region, normalized)
-  h1D_Norm->SetLineColor(kBlue + 1);
-  h1D_Norm->SetMarkerColor(kBlue + 1);
-  h1D_Norm->SetMarkerStyle(kFullCircle);
-  h1D_Norm->SetMinimum(0);*/
-
-  /*if (fdoSecPartContamination) {
-    h1D_Norm_SecPart->SetLineColor(kRed + 1);
-    h1D_Norm_SecPart->SetMarkerColor(kRed + 1);
-    h1D_Norm_SecPart->SetMarkerStyle(kFullCircle);
-  }
-
-  if (fdoSecPartContamination) {
-    fCorrectedCorrHisto = reinterpret_cast<TH1D*>(h1D_Norm_SecPart->Clone("hCorrectedCorr"));
-  } else {
-    fCorrectedCorrHisto = reinterpret_cast<TH1D*>(h1D_Norm->Clone("hCorrectedCorr"));
-  }*/
-
-  /* used as control using Run2 reflection function
-  if (fFDsubtraction) {
-    h1D_ReflCorr = ReflectHistoRun2(h1D_SubtrFDNorm, 0.5);
-  } else if (fdoSecPartContamination) {
-    h1D_ReflCorr = ReflectHistoRun2(h1D_SubtrNorm_SecPart, 0.5);
-  } else {
-    h1D_ReflCorr = ReflectHistoRun2(h1D_SubtrNorm, 0.5);
-  }*/
-
   // clean up
   delete h1D_NormalizedCorrectedCorrel;
   h1D_NormalizedCorrectedCorrel = nullptr;
-  /*if (fdoSecPartContamination) {
-    delete h1D_Norm_SecPart;
-    h1D_Norm_SecPart = nullptr;
-  }
-  delete h1D_ReflCorr;
-  h1D_ReflCorr = nullptr;
-  delete hBaseline_Refl;
-  hBaseline_Refl = nullptr;*/
 
   return kTRUE;
 }
@@ -494,25 +413,6 @@ Bool_t DhCorrelationExtraction::ReadInputSEandME()
   fDirME = reinterpret_cast<TDirectoryFile*>(fFileME->Get(fDirNameME.Data()));
   return kTRUE;
 }
-
-/*Bool_t DhCorrelationExtraction::ReadInputSecondaryPartContamination()
-{
-
-  fFileSecPart = TFile::Open(fFileSecPartName.Data());
-  if (!fFileSecPart) {
-    std::cerr << "[ERROR] File " << fFileSecPartName << " cannot be opened! check your file path!" << std::endl;
-    return kFALSE;
-  }
-
-  fDirSecPart = reinterpret_cast<TDirectoryFile*>(fFileSecPart->Get(fDirSecPartName.Data()));
-
-  if (!fDirSecPart) {
-    std::cerr << "[ERROR] Directory " << fDirSecPart << " cannot be opened! check your file path!" << std::endl;
-    return kFALSE;
-  }
-
-  return kTRUE;
-}*/
 
 TH2D* DhCorrelationExtraction::ProjCorrelHisto(Int_t SEorME, Int_t pool)
 {
@@ -627,14 +527,10 @@ if (fDebug > 0) {
   // Project to 2D histogram for correlation, and 2D histogram for mass vs deltaEta if needed for kDeltaPhiBinning method
   hFinal = (TH2D*)hSparse->Projection(kDeltaPhi, kDeltaEta);            // axis4: deltaPhi, axis3: deltaEta Y X
 
-  // std::cout << "Number of bins before rebinning: " << hFinal->GetNbinsX() << " (deltaEta), " << hFinal->GetNbinsY() << " (deltaPhi)" << std::endl;
-  // std::cout << "fRebinAxisDeltaEta: " << fRebinAxisDeltaEta << ", fRebinAxisDeltaPhi: " << fRebinAxisDeltaPhi << std::endl;
   // rebin axes deltaEta and deltaPhi
   if (fRebinAxisDeltaEta > 1 || fRebinAxisDeltaPhi > 1) {
     hFinal->Rebin2D(fRebinAxisDeltaEta, fRebinAxisDeltaPhi); // X Y
   }
-  // std::cout << "Number of bins after rebinning: " << hFinal->GetNbinsX() << " (deltaEta), " << hFinal->GetNbinsY() << " (deltaPhi)" << std::endl;
-  // std::exit(0);
 
   if (SEorME == kME) CalculateNormaliztionFactorME(hFinal, pool);
   if(fMethod == kDeltaPhiBinning) {
@@ -688,8 +584,6 @@ if (fDebug > 0) {
   hFinal = nullptr;
   delete hFinalMass;
   hFinalMass = nullptr;
-  delete hSparse;
-  hSparse = nullptr;
 
   return h2D;
 }
@@ -716,35 +610,6 @@ void DhCorrelationExtraction::CalculateNormaliztionFactorME(TH2D*& histoME, Int_
 
   fFactorsNormME[pool] = factorNorm;
 }
-
-// THnSparseF* DhCorrelationExtraction::GetCorrelSparse(Int_t SEorME, Int_t pool)
-// {
-//   THnSparseF* hSparse = nullptr;
-//   TString sparseName = SEorME == kSE ? fCorrelSparseNameSE.Data() : fCorrelSparseNameME.Data();
-
-//   if (fDoPoolByPool) {
-//     TDirectory* targetDir = (SEorME == kSE) ? fDirSE : fDirME;
-    
-//     THnSparseF* hSparseRaw = static_cast<THnSparseF*>(targetDir->Get(sparseName.Data()));
-//     if (!hSparseRaw) {
-//       Error("ProjCorrelHisto", "Could not find THnSparse %s in directory", sparseName.Data());
-//       return nullptr; 
-//     }
-    
-//     hSparse = static_cast<THnSparseF*>(hSparseRaw->Clone(Form("%s_Pool%d", sparseName.Data(), pool)));
-
-//   } else {
-//     TDirectory* targetDir = (SEorME == kSE) ? fDirSE : fDirME;
-
-//     hSparse = static_cast<THnSparseF*>(targetDir->Get(sparseName.Data()));
-//     if (!hSparse) {
-//       Error("ProjCorrelHisto", "Could not find THnSparse %s in directory", sparseName.Data());
-//       return nullptr;
-//     }
-//   }
-
-//   return hSparse;
-// }
 
 void DhCorrelationExtraction::NormalizeMEplot(TH2D*& histoME, TH2D*& histoMEsoftPi, Int_t pool)
 {
@@ -926,93 +791,3 @@ Double_t DhCorrelationExtraction::CalculateTriggerNormalizationFactor(TH2D* hMas
 
   return triggerCount;
 }
-
-/*TH1D* DhCorrelationExtraction::ProjCorrelHistoSecondaryPart(Int_t PartType, Double_t PtCandMin, Double_t PtCandMax, Double_t PtHadMin, Double_t PtHadMax)
-{
-
-  TH1D* h1D = new TH1D(); // pointer to be returned
-  TH1D* h1DOrig = nullptr;
-
-  THnSparseD* hSparse = 0x0;
-
-  if (PartType == kPrimaryPart) { // primary particles
-    hSparse = reinterpret_cast<THnSparseD*>(fDirSecPart->Get(fHistoPrimaryPartName.Data()));
-  } else { // all selected particles
-    hSparse = reinterpret_cast<THnSparseD*>(fDirSecPart->Get(fHistoAllPartName.Data()));
-  }
-
-  // Check pointer
-  if (!hSparse) {
-    std::cerr << "[ERROR] hSparse is null! Check that the object name exists in the directory and the file is open." << std::endl;
-    throw std::runtime_error("hSparse is null");
-  }
-
-  // get bin ranges
-  Int_t binExtPtCandMin = (Int_t)hSparse->GetAxis(2)->FindBin(PtCandMin + 0.01); // axis2: ptCand, the 0.01 to avoid bin edges!
-  Int_t binExtPtCandMax = (Int_t)hSparse->GetAxis(2)->FindBin(PtCandMax - 0.01);
-  Int_t binExtPtHadMin = (Int_t)hSparse->GetAxis(3)->FindBin(PtHadMin + 0.01); // axis3: ptHad
-  Int_t binExtPtHadMax = (Int_t)hSparse->GetAxis(3)->FindBin(PtHadMax - 0.01);
-  Int_t binExtPoolMin;
-  Int_t binExtPoolMax;
-  if (PartType == kAllPart) {
-    binExtPoolMin = 1;
-    binExtPoolMax = (Int_t)hSparse->GetAxis(4)->GetNbins();
-  }
-  // possibility to select a certain eta region
-  Int_t binExtEtaLeftMin = (Int_t)hSparse->GetAxis(1)->FindBin(fDeltaEtaLeftMin + 0.0001);
-  Int_t binExtEtaLeftMax = (Int_t)hSparse->GetAxis(1)->FindBin(fDeltaEtaLeftMax - 0.0001);
-  if (binExtEtaLeftMax > hSparse->GetAxis(1)->GetNbins())
-    binExtEtaLeftMax = hSparse->GetAxis(1)->GetNbins();
-  if (binExtEtaLeftMin < 1)
-    binExtEtaLeftMin = 1;
-  Int_t binExtEtaRightMin = (Int_t)hSparse->GetAxis(1)->FindBin(fDeltaEtaRightMin + 0.0001);
-  Int_t binExtEtaRightMax = (Int_t)hSparse->GetAxis(1)->FindBin(fDeltaEtaRightMax - 0.0001);
-  if (binExtEtaRightMax > hSparse->GetAxis(1)->GetNbins())
-    binExtEtaRightMax = hSparse->GetAxis(1)->GetNbins();
-  if (binExtEtaRightMin < 1)
-    binExtEtaRightMin = 1;
-
-  if (fDebug > 1) {
-    if (PartType == kPrimaryPart) {
-      h1DOrig = reinterpret_cast<TH1D*>(hSparse->Projection(0)); // axis0: deltaPhi
-      h1DOrig->SetName("hPrimaryPartCorr_Orig");
-      fOriginalCorrel_PrimaryPart = reinterpret_cast<TH1D*>(h1DOrig->Clone("hPrimaryPartCorr_Orig"));
-      h1DOrig = nullptr;
-    } else {
-      h1DOrig = reinterpret_cast<TH1D*>(hSparse->Projection(0)); // axis0: deltaPhi
-      h1DOrig->SetName("hAllPartCorr_Orig");
-      fOriginalCorrel_AllPart = reinterpret_cast<TH1D*>(h1DOrig->Clone("hAllPartCorr_Orig"));
-      h1DOrig = nullptr;
-    }
-  }
-
-  // set ranges
-  hSparse->GetAxis(1)->SetRange(binExtEtaLeftMin, binExtEtaLeftMax);       // axis1: deltaEta
-  hSparse->GetAxis(1)->SetRange(binExtEtaRightMin, binExtEtaRightMax); // axis1: deltaEta
-  hSparse->GetAxis(2)->SetRange(binExtPtCandMin, binExtPtCandMax); // axis2: ptCand
-  hSparse->GetAxis(3)->SetRange(binExtPtHadMin, binExtPtHadMax);   // axis3: ptHad
-  if (PartType == kAllPart) {
-    hSparse->GetAxis(4)->SetRange(binExtPoolMin, binExtPoolMax); // axis4: pool bin
-  }
-
-  h1D = reinterpret_cast<TH1D*>(hSparse->Projection(0)); // axis0: deltaPhi
-  if (PartType == kPrimaryPart) {                        // primary particles
-    h1D->SetName(Form("hPrimaryPartCorr_PtD%.0fto%.0f_PtHad%.0fto%.0f", PtCandMin, PtCandMax, PtHadMin, PtHadMax));
-  } else { // all selected particles
-    h1D->SetName(Form("hAllPartCorr_PtD%.0fto%.0f_PtHad%.0fto%.0f", PtCandMin, PtCandMax, PtHadMin, PtHadMax));
-  }
-
-  if (fDebug > 0) {
-    if (PartType == kPrimaryPart) {
-      fCorrel_PrimaryPart = reinterpret_cast<TH1D*>(h1D->Clone(Form("hPrimaryPartCorr_PtD%.0fto%.0f_PtHad%.0fto%.0f", PtCandMin, PtCandMax, PtHadMin, PtHadMax)));
-    } else {
-      fCorrel_AllPart = reinterpret_cast<TH1D*>(h1D->Clone(Form("hAllPartCorr_PtD%.0fto%.0f_PtHad%.0fto%.0f", PtCandMin, PtCandMax, PtHadMin, PtHadMax)));
-    }
-  }
-
-  // clean up
-  delete hSparse;
-  hSparse = nullptr;
-
-  return h1D;
-}*/

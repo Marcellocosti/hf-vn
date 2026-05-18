@@ -69,6 +69,7 @@ class DhCorrelationExtraction : public TObject
   DhCorrelationExtraction(const DhCorrelationExtraction& source);
   virtual ~DhCorrelationExtraction();
   static DhCorrelationExtraction CreateDefault();
+  static DhCorrelationExtraction CreateCustom(const TString& dirNameSE, const TString& dirNameME, const TString& massSparseName);
   static DhCorrelationExtraction* CreateCopy(const DhCorrelationExtraction& source);
 
   /// Input files, directories and thnsparse
