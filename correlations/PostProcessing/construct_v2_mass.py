@@ -23,6 +23,10 @@ import yaml
 import pathlib as PATH
 import ROOT
 
+script_dir = os.path.dirname(os.path.realpath(__file__))
+sys.path.append(os.path.join(script_dir, '../../', 'utils'))
+from utils import check_dir, logger
+
 ROOT.gROOT.SetBatch(True)
 ROOT.gErrorIgnoreLevel = ROOT.kWarning
 
@@ -40,34 +44,39 @@ def get_mass_distribution(mass_vs_pt, pt_min, pt_max):
 
 def build_mass_v2(cfg_path):
     """Build v2-vs-mass histograms from InvMassVsPt.root + CorrPhiD0_FinalPlots.root."""
+    # Load config and check method
     with open(cfg_path) as f:
         config = yaml.safe_load(f)
-
     method = config.get("method")
-    if method != "MassBinning":
-        print(f"[INFO] method='{method}' — skip (not MassBinning).")
-        return
-
     suffix = config["suffix"]
     outdir = PATH.Path(config["outdir"])
+    meson = config.get("Dmeson", "Dzero")
+    v2_hh = float(config.get("v2HH", 0.07))
+    if v2_hh <= 0:
+        logger(f"Invalid v2HH: {v2_hh}", level="FATAL")
+    elif isinstance(v2_hh, float):
+        logger(f"Using v2HH = {v2_hh} for scaling v2 values", level="WARNING")
+    elif config.get("v2HH") is not None:
+        logger(f"v2HH should be a single float value, but got {config.get('v2HH')} — using default {v2_hh}", level="WARNING")
+    
+    if method != "MassBinning":
+        logger(f"[method='{method}' — skip (not MassBinning).")
+        return
+
     extract_dir = outdir / f"CorrelExtract_{suffix}"
-    v2_delta_hh = float(config.get("v2DeltaHH", 0.07))
 
     inv_mass_path = outdir / "InvMass" / "InvMassVsPt.root"
     final_plots_path = (extract_dir / "CorrelationFitResults"
                         / "Output_CorrelationFitting_Root"
-                        / "CorrPhiD0_FinalPlots.root")
-    if not inv_mass_path.exists():
-        print(f"[ERROR] {inv_mass_path} not found")
-        sys.exit(1)
-    if not final_plots_path.exists():
-        print(f"[ERROR] {final_plots_path} not found")
-        sys.exit(1)
+                        / f"CorrPhi{meson}_FinalPlots.root")
+    
+    if not inv_mass_path.exists(): logger(f"{inv_mass_path} not found", level="FATAL")
+    if not final_plots_path.exists(): logger(f"{final_plots_path} not found", level="FATAL")
 
     pt_bins_cand = [float(ptBinCand) for ptBinCand in config["ptBinsCand"]]
     pt_bins_had  = [float(ptBinHad) for ptBinHad in config["ptBinsHad"]]
     inv_mass_bins_raw = config["invMassBins"]
-    n_pt_cand, n_pt_had = len(pt_bins_cand) - 1, len(pt_bins_had) - 1
+    n_pt_cand= len(pt_bins_cand) - 1
 
     # Build per-pt-cand mass bin edges (matching FitCorrel logic)
     mass_edges_per_pt = []
@@ -75,18 +84,17 @@ def build_mass_v2(cfg_path):
         if i_pt < len(inv_mass_bins_raw):
             edges = [float(x) for x in inv_mass_bins_raw[i_pt]]
         else:
-            print(f"[WARNING] invMassBins has only {len(inv_mass_bins_raw)}, but {n_pt_cand} pt cand bins — using last entry for remaining bins")
+            logger(f"invMassBins has only {len(inv_mass_bins_raw)}, but {n_pt_cand} pt cand bins — using last entry for remaining bins", level="WARNING")
             edges = [float(x) for x in inv_mass_bins_raw[-1]]
         mass_edges_per_pt.append(edges)
 
     file_mass = ROOT.TFile.Open(str(inv_mass_path))
     h_mass_vs_pt = file_mass.Get("hMassVsPt")
-
     file_v2 = ROOT.TFile.Open(str(final_plots_path))
     h_v2_deltas = {obj.GetName(): file_v2.Get(obj.GetName()) for obj in file_v2.GetListOfKeys()}
     for h in h_v2_deltas.values():
         h.SetDirectory(0)
-    print(f"[INFO] Loaded {len(h_v2_deltas)} histos from FinalPlots")
+    logger(f"Loaded {len(h_v2_deltas)} histos from FinalPlots")
 
     out_mass_v2_dir = extract_dir / "CorrelationFitResults" / "MassVsV2"
     os.makedirs(str(out_mass_v2_dir), exist_ok=True)
@@ -117,7 +125,7 @@ def build_mass_v2(cfg_path):
                     h_mass_vs_v2.SetBinError(i_ml+1, hv.GetBinError(i_pt_cand+1))
                 else:
                     print(f"  [WARNING] {hn} not found in FinalPlots — skipping mass bin {i_ml+1} for ptCand {i_pt_cand}")
-            h_mass_vs_v2.Scale(1.0 / v2_delta_hh)
+            h_mass_vs_v2.Scale(1.0 / v2_hh)
             h_mass_vs_v2s.append(h_mass_vs_v2)
 
         out_path = out_mass_v2_dir / f"InvMassVsV2_{pt_had_str}.root"
@@ -243,8 +251,9 @@ if __name__ == "__main__":
 
     pars = args.parse_args()
     if not os.path.exists(pars.config):
-        print(f"[ERROR] Config not found: {pars.config}"); sys.exit(1)
+        logger(f"Config not found: {pars.config}", level="FATAL")
     if pars.cmd == "extract-ry-trigger":
         extract_ry_trigger(pars.config)
     else:
+        logger(f"Running build_mass_v2 with config: {pars.config}")
         build_mass_v2(pars.config)
