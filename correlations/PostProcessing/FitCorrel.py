@@ -256,6 +256,7 @@ def fit_correl(cfg_path):
 
     with_ped_lm = fit_config.get("WithPedLM", False)
     fix_lm_factor = fit_config.get("FixLMFactor", False)
+    temp_func = int(fit_config.get("tempFunc", 0))
 
     par_vals = [float(x) for x in fit_config.get("parVals", config.get("parVals", []))]
     par_low = [float(x) for x in fit_config.get("parLowBounds", config.get("parLowBounds", []))]
@@ -320,6 +321,38 @@ def fit_correl(cfg_path):
         h_lm = ROOT.TH1D(f"hLMFactor_PtBinAssoc{i_pt_had + 1}", "", n_pt_cand, pt_cand_edges_arr)
         h_lm.SetDirectory(ROOT.nullptr)
         h_lm_factor[i_pt_had] = h_lm
+        
+    # # merge LM for mass binning case (same LM for all mass bins of a given ptHad)
+    # merged_lm = {}
+    # if not use_pairs_file and in_file_lm:
+    #     for i_pt_cand in range(n_pt_cand):
+    #         pt_cand_min = pt_bins_cand[i_pt_cand]
+    #         pt_cand_max = pt_bins_cand[i_pt_cand + 1]
+    #         for i_pt_had, (pt_had_min, pt_had_max) in enumerate(
+    #                 zip(pt_bins_had[:-1], pt_bins_had[1:])):
+    #             pc_dir = pt_cand_dir_name(pt_cand_min, pt_cand_max)
+    #             ph_dir = pt_had_dir_name(pt_had_min, pt_had_max)
+    #             key = f"{pc_dir}/{ph_dir}"
+
+    #             h_merged = None
+    #             for i_mass_global, mass_combo in enumerate(mass_combos):
+    #                 mass_i_pt, mass_i_local, mass_min, mass_max = mass_combo
+    #                 if mass_i_pt != i_pt_cand:
+    #                     continue
+    #                 im_dir = (f"InvMassBin_{int(mass_min * 1000):.0f}_"
+    #                           f"{int(mass_max * 1000):.0f}")
+    #                 hist_path = f"{pc_dir}/{ph_dir}/{im_dir}/hCorrectedCorrel"
+    #                 h_tmp = in_file_lm.Get(hist_path)
+    #                 if h_tmp:
+    #                     h_tmp.SetDirectory(ROOT.nullptr)
+    #                     if h_merged is None:
+    #                         h_merged = ROOT.TH1D(h_tmp)
+    #                         h_merged.SetDirectory(ROOT.nullptr)
+    #                     else:
+    #                         h_merged.Add(h_tmp)
+    #             merged_lm[key] = h_merged
+    #             if h_merged:
+    #                 print(f"    LM merged for {key}: {h_merged.GetNbinsX()} bins")
 
     # ============== MAIN FIT LOOP ==============
     # For use_pairs_file (DeltaPhiBinning): iterate over ptCand internally
@@ -388,29 +421,61 @@ def fit_correl(cfg_path):
                             print(f"    LM template from: {alt_path}")
                         else:
                             print(f"    [WARNING] LM template not found: {alt_path}")
-                use_template = h_corr_lm is not None
+                    # if not use_pairs_file:
+                    #     # MassBinning: use pre-merged LM template
+                    #     key = f"{pc_dir}/{ph_dir}"
+                    #     h_corr_lm = merged_lm.get(key)
+                    #     if h_corr_lm:
+                    #         print(f"    LM template: pre-merged from {key}")
+                    #     else:
+                    #         print(f"    [WARNING] Merged LM not found for {key}")
+                    # else:
+                    #     # DeltaPhiBinning: read LM template
+                    #     h_corr_lm = in_file_lm.Get(hist_path)
+                    #     if not h_corr_lm:
+                    #         alt_path = (f"{pc_dir}/{ph_dir}/hPairsYields_vs_DeltaPhi")
+                    #         h_corr_lm = in_file_lm.Get(alt_path)
+                    #         if h_corr_lm:
+                    #             print(f"    LM template from: {alt_path}")
+                    #         else:
+                    #             print(f"    [WARNING] LM template not found: {alt_path}")
+                    use_template = h_corr_lm is not None
 
                 # ---- Read ry_trigger --------------------------------------
                 ry_val = 1.0
                 ry_err = 0.0
                 h_ry = in_file.Get(f"{pc_dir}/{ph_dir}/ry_trigger")
                 if h_ry:
-                    ry_val = h_ry.GetBinContent(1)
-                    ry_err = h_ry.GetBinError(1)
-                    print(f"    ry_trigger = {ry_val} +/- {ry_err}")
+                    n_ry_bins = h_ry.GetNbinsX()
+                    if n_ry_bins >= mass_i_local + 1:
+                        ry_val = h_ry.GetBinContent(mass_i_local + 1)
+                        ry_err = h_ry.GetBinError(mass_i_local + 1)
+                        print(f"    ry_trigger[mass{mass_i_local + 1}] = {ry_val:.0f} +/- {ry_err:.0f}")
+                    else:
+                        ry_val = h_ry.GetBinContent(1)
+                        ry_err = h_ry.GetBinError(1)
+                        print(f"    ry_trigger (single bin) = {ry_val:.0f} +/- {ry_err:.0f}")
                 lm_ry_val = 1.0
                 lm_ry_err = 0.0
+                h_pairs_lm = 0.0
                 if in_file_lm:
                     h_lm_ry = in_file_lm.Get(f"{pc_dir}/{ph_dir}/ry_trigger")
                     if h_lm_ry:
-                        lm_ry_val = h_lm_ry.GetBinContent(1)
-                        lm_ry_err = h_lm_ry.GetBinError(1)
-                        print(f"    LM ry_trigger = {lm_ry_val} +/- {lm_ry_err}")
-                    else:
-                        h_lm_ry = in_file_lm.Get(f"{pc_dir}/{ph_dir}/ry_trigger")
-                        if h_lm_ry:
+                        n_ry_bins = h_lm_ry.GetNbinsX()
+                        if n_ry_bins >= mass_i_local + 1:
+                            # Per-mass-bin ry_trigger
+                            lm_ry_val = h_lm_ry.GetBinContent(mass_i_local + 1)
+                            lm_ry_err = h_lm_ry.GetBinError(mass_i_local + 1)
+                            lm_ry_total = h_lm_ry.Integral()
+                            if lm_ry_total > 0:
+                                h_pairs_lm = lm_ry_val / lm_ry_total
+                            print(f"    LM ry_trigger[mass{mass_i_local + 1}] = {lm_ry_val:.0f} +/- {lm_ry_err:.0f}  "
+                                  f"(total={lm_ry_total:.0f}, ratio={h_pairs_lm:.6f})")
+                        else:
+                            # Single-bin ry_trigger
                             lm_ry_val = h_lm_ry.GetBinContent(1)
                             lm_ry_err = h_lm_ry.GetBinError(1)
+                            print(f"    LM ry_trigger (single bin) = {lm_ry_val:.0f} +/- {lm_ry_err:.0f}")
 
                 # ---- Convert to TH1F for the fitter ---------------------
                 h_fit = ROOT.TH1F(
@@ -435,6 +500,7 @@ def fit_correl(cfg_path):
                 if use_template:
                     corr_fitter.SetWithPedLM(with_ped_lm)
                     corr_fitter.SetFixLMFactor(fix_lm_factor)
+                    corr_fitter.SetTempFunc(temp_func)
                     corr_fitter.SetFixBaseline(fix_baseline)
                     corr_fitter.SetBaselineUpOrDown(shift_base_up, shift_base_down)
                     if n_baseline_points > 0:
@@ -453,9 +519,15 @@ def fit_correl(cfg_path):
                 corr_fitter.SetRyTrigger(ry_val, ry_err)
                 if use_template:
                     corr_fitter.SetLMRyTrigger(lm_ry_val, lm_ry_err)
-
                 if h_corr_lm:
-                    corr_fitter.SetLMTemplate(h_corr_lm)
+                    # Clone the merged LM template so each mass bin gets its own copy
+                    h_lm_clone = ROOT.TH1D(h_corr_lm)
+                    h_lm_clone.SetDirectory(ROOT.nullptr)
+                    ROOT.SetOwnership(h_lm_clone, False)
+                    corr_fitter.SetLMTemplate(h_lm_clone)
+                    if not use_pairs_file and h_pairs_lm > 0:
+                        corr_fitter.SetLMPairs(h_pairs_lm)
+                        print(f"      SetLMPairs = {h_pairs_lm:.6f}")
 
                 if par_vals:
                     npars = len(par_vals)
@@ -546,6 +618,84 @@ def fit_correl(cfg_path):
                 canvas.SaveAs(png_path)
                 canvas.SaveAs(root_canvas_path)
                 canvas.Close()
+
+                # ---- Draw hLM_template (LM data + template function + baseline) ----
+                if use_template and mass_i_local == 0:
+                    try:
+                        lm_out = corr_fitter.GetLMOutput()
+                        lm_func = corr_fitter.GetLMTemplateFunc()
+                        if lm_out:
+                            lm_out.SetDirectory(ROOT.nullptr)
+                            bl_val = corr_fitter.GetPedestal()
+                            bl_line = ROOT.TF1("fBaseLine", "[0]", 0, 2*math.pi)
+                            bl_line.SetParameter(0, bl_val)
+                            bl_line.SetLineColor(ROOT.kGray + 2)
+                            bl_line.SetLineStyle(3)
+                            bl_line.SetLineWidth(3)
+
+                            c_lm = ROOT.TCanvas(
+                                f"cLMTemplate_PtBinCand{i_pt_cand + 1}_"
+                                f"PtBinAssoc{i_pt_had + 1}",
+                                "LM Template Comparison", 1600, 1200)
+                            c_lm.SetLeftMargin(0.15)
+                            c_lm.SetRightMargin(0.05)
+                            c_lm.SetBottomMargin(0.12)
+                            c_lm.SetTopMargin(0.05)
+                            c_lm.cd()
+                            lm_out.SetTitle("")
+                            lm_out.GetXaxis().SetTitle("#Delta#phi [rad]")
+                            lm_out.GetYaxis().SetTitle("#frac{dN^{assoc}}{d#Delta#phi} [rad^{-1}]")
+                            lm_out.SetStats(0)
+                            lm_out.Draw("E")
+                            if lm_func:
+                                lm_func.SetLineColor(ROOT.kBlue)
+                                lm_func.SetLineWidth(3)
+                                lm_func.SetLineStyle(2)
+                                lm_func.DrawClone("Same")
+                            bl_line.Draw("Same")
+
+                            leg_lm = ROOT.TLegend(0.65, 0.70, 0.92, 0.88)
+                            leg_lm.SetFillStyle(0)
+                            leg_lm.SetBorderSize(0)
+                            leg_lm.SetTextSize(0.035)
+                            leg_lm.AddEntry(lm_out, "LM Data (raw)", "lep")
+                            if lm_func:
+                                leg_lm.AddEntry(lm_func, "Template Function", "l")
+                            # Draw sub-component functions from fLMOutput's function list
+                            for i_f in range(lm_out.GetListOfFunctions().GetSize()):
+                                f_obj = lm_out.GetListOfFunctions().At(i_f)
+                                if f_obj:
+                                    f_name = str(f_obj.GetName())
+                                    if "Near" in f_name:
+                                        f_obj.DrawClone("Same")
+                                        leg_lm.AddEntry(f_obj, "Near-Side", "l")
+                                    elif "Away" in f_name:
+                                        f_obj.DrawClone("Same")
+                                        leg_lm.AddEntry(f_obj, "Away-Side", "l")
+                            leg_lm.AddEntry(bl_line, "Baseline", "l")
+                            leg_lm.Draw()
+
+                            pt_text_lm = ROOT.TPaveText(0.20, 0.90, 0.85, 0.96, "NDC")
+                            pt_text_lm.SetFillStyle(0)
+                            pt_text_lm.SetBorderSize(0)
+                            pt_text_lm.AddText(
+                                f"LM Template: {pt_cand_min:.1f} < #it{{p}}_{{T}}^{{{dmeson_label}}} < {pt_cand_max:.1f} GeV/c, "
+                                f"{pt_had_min:.1f} < #it{{p}}_{{T}}^{{assoc}} < {pt_had_max:.1f} GeV/c, "
+                                f"  tempFunc={corr_fitter.GetTempFunc()}")
+                            pt_text_lm.SetTextAlign(22)
+                            pt_text_lm.Draw("Same")
+                            c_lm.Update()
+
+                            lm_png_name = (f"hLMtemplate_PtBinCand{i_pt_cand + 1}_"
+                                          f"PtBinAssoc{i_pt_had + 1}")
+                            c_lm.SaveAs(os.path.join(out_png_dir, f"{lm_png_name}.png"))
+                            lm_root_path = os.path.join(
+                                out_root_dir, f"{lm_png_name}.root")
+                            c_lm.SaveAs(lm_root_path)
+                            c_lm.Close()
+                            ROOT.SetOwnership(c_lm, False)
+                    except Exception as e:
+                        print(f"[WARNING] hLM_template drawing failed: {e}")
 
                 del corr_fitter, h_fit, canvas
 

@@ -1,6 +1,6 @@
 Dmeson: Dzero
 suffix: "0d8_1d5"
-outdir: "/home/wuct/MetaData/DATA/OO/apass2/corr/results/fifth/k020/fitprocedure"
+outdir: "/home/wuct/MetaData/DATA/OO/apass2/corr/results/fifth/k020_gausPer/etaVariation"
 pathFileSE: "/home/wuct/MetaData/DATA/OO/apass2/corr/results/fifth/large/SE/k020/AnalysisResults.root"
 pathFileME: "/home/wuct/MetaData/DATA/OO/apass2/corr/results/fifth/large/ME/k020/AnalysisResults.root"
 pathFileMass: "/home/wuct/MetaData/DATA/OO/apass2/corr/results/fifth/large/SE/k020/AnalysisResults.root"
@@ -10,7 +10,7 @@ nWorkers: 18
 task_LM:
   do: true
   suffix: "0d8_1d5"
-  outdir: "/home/wuct/MetaData/DATA/OO/apass2/corr/results/fifth/k60100/fitprocedure"
+  outdir: "/home/wuct/MetaData/DATA/OO/apass2/corr/results/fifth/k60100_gausPer/etaVariation"
   pathFileSE: "/home/wuct/MetaData/DATA/OO/apass2/corr/results/fifth/large/SE/k60100/AnalysisResults.root"
   pathFileME: "/home/wuct/MetaData/DATA/OO/apass2/corr/results/fifth/large/ME/k60100/AnalysisResults.root"
   pathFileMass: "/home/wuct/MetaData/DATA/OO/apass2/corr/results/fifth/large/SE/k60100/AnalysisResults.root"
@@ -36,6 +36,7 @@ ptBinsCand: [
            4.0, #7
            5.0,
            6.0,
+           7.0,
            8.0,
            12.0
            ]
@@ -50,6 +51,7 @@ invMassBins: [
                 [1.72,1.76,1.80,1.84,1.86,1.88,1.90,1.94,1.98,2.02], # pt 7
                 [1.72,1.76,1.80,1.84,1.86,1.88,1.90,1.94,1.98,2.04], # pt 8
                 [1.72,1.76,1.80,1.84,1.86,1.88,1.90,1.94,1.98,2.04], # pt 9
+                [1.72,1.76,1.80,1.84,1.86,1.88,1.90,1.94,1.98,2.04], # pt 10
                 [1.72,1.76,1.80,1.84,1.86,1.88,1.90,1.94,1.98,2.04], # pt 10
                 [1.70,1.76,1.80,1.84,1.86,1.88,1.90,1.94,1.98,2.06], # pt 11
                 # [1.72,1.76,1.78,1.80,1.82,1.84,1.86,1.88,1.90,1.92,1.94,1.96,1.98,2.02], # pt 1
@@ -92,6 +94,7 @@ fitConfig:
             [1.72, 2.04], # pt 8
             [1.72, 2.04], # pt 9
             [1.72, 2.04], # pt 10
+            [1.72, 2.04], # pt 10
             [1.70, 2.06], # pt 11
            ]
     BkgFunc: 'kExpo' # background function. If a single value is provided, it will be used for all pt bins.
@@ -101,6 +104,7 @@ fitConfig:
     FitFunction: '10'
     WithPedLM: false # if true, include pedestal in the LM template fit
     FixLMFactor: true # if true, fix the LM factor
+    tempFunc: 4 # LM template type: 0=raw histogram, 1=raw+spline, 2=smooth+spline, 3=Gaus, 4=GausPeriodic
     FixBaseline: -4
     # "0 : baseline free, = 1 : fix the baseline to the minimum of the histogram, < 0 : fix the baseline to the weighted average of the abs(fFixBaseline) lower points, = 3 : fix the baseline to the weighted average of the points passed through the function SetPointsForBaseline(), 4 : fix the baseline to the weighted average of default transverse region points
     FixMean: 0

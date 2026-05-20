@@ -179,6 +179,17 @@ def extract_ry_trigger(cfg_path):
 
     file_mass = ROOT.TFile.Open(str(inv_mass_path))
     htemp = file_mass.Get("hMassVsPt")
+
+    inv_mass_bins_raw = config["invMassBins"]
+    mass_edges_per_pt = []
+    for i_pt in range(n_pt_cand):
+        if i_pt < len(inv_mass_bins_raw):
+            edges = [float(x) for x in inv_mass_bins_raw[i_pt]]
+        else:
+            print(f"[WARNING] invMassBins has only {len(inv_mass_bins_raw)}, but {n_pt_cand} pt cand bins — using last entry for remaining bins")
+            edges = [float(x) for x in inv_mass_bins_raw[-1]]
+        mass_edges_per_pt.append(edges)
+
     results = {}
     for i_pt_cand, (pt_cand_min, pt_cand_max) in enumerate(zip(pt_bins_cand[:-1], pt_bins_cand[1:])):
         y1 = htemp.GetYaxis().FindBin(pt_cand_min*1.0001)
@@ -186,6 +197,9 @@ def extract_ry_trigger(cfg_path):
         h_mass_temp = htemp.ProjectionX(f"_ryproj_pc{i_pt_cand}", y1, y2)
         h_mass_temp.SetDirectory(0)
         total_count = h_mass_temp.Integral()
+
+        mass_edges = mass_edges_per_pt[i_pt_cand]
+        n_mass_bins = len(mass_edges) - 1
 
         mass_fit_range = (fit_config["MassFitRanges"][i_pt_cand] if isinstance(fit_config.get("MassFitRanges"), list)
                and len(fit_config["MassFitRanges"]) > i_pt_cand else [pt_bins_cand[0], pt_bins_cand[-1]])
@@ -209,9 +223,18 @@ def extract_ry_trigger(cfg_path):
         fitter.fit()
         fitter.plot_fit(logy=False, path=str(extract_dir / f"ry_trigger_fit_pc{i_pt_cand}.png"), show_extra_info=False)
         fit_info, _, _, _, _ = fitter.get_fit_info()
+        # Compute per-mass-bin counts from the mass projection
+        mass_bin_counts = []
+        for i_ml in range(n_mass_bins):
+            bin_low = h_mass_temp.GetXaxis().FindBin(mass_edges[i_ml] * 1.0001)
+            bin_high = h_mass_temp.GetXaxis().FindBin(mass_edges[i_ml + 1] * 0.9999)
+            cnt = int(h_mass_temp.Integral(bin_low, bin_high))
+            mass_bin_counts.append(cnt)
         for i_ph in range(n_pt_had):
-            results[(i_pt_cand, i_ph)] = (fit_info['sgn']['ry'], fit_info['sgn']['ry_unc'], total_count)
+            results[(i_pt_cand, i_ph)] = (fit_info['sgn']['ry'], fit_info['sgn']['ry_unc'],
+                                          total_count, mass_edges, mass_bin_counts)
         print(f"  ptCand [{pt_cand_min:.1f}, {pt_cand_max:.1f}]: ry_trigger = {fit_info['sgn']['ry']:.0f} ± {fit_info['sgn']['ry_unc']:.0f}, total_count = {total_count:.0f}")
+        print(f"    mass bins: {n_mass_bins}, bin counts: {mass_bin_counts}")
 
     file_mass.Close()
 
@@ -226,17 +249,24 @@ def extract_ry_trigger(cfg_path):
                 out_file.mkdir(pt_cand_str); out_file.cd(pt_cand_str)
                 if not ROOT.gDirectory.GetDirectory(pt_had_str):
                     ROOT.gDirectory.mkdir(pt_had_str)
-            ry, ry_err, total_count = results.get((i_pt_cand, i_pt_had), (0., 0., 0.))
-            hry = ROOT.TH1D("ry_trigger", "", 1, 0., 1.)
-            # hry.SetBinContent(1, ry); hry.SetBinError(1, ry_err)
-            # Use total count instead of raw yield for mass binning
-            hry.SetBinContent(1, total_count)
+            ry, ry_err, total_count, mass_edges, mass_bin_counts = results.get((i_pt_cand, i_pt_had),
+                                                                               (0., 0., 0., [], []))
+            # Save ry_trigger as multi-bin histogram (one bin per mass sub-bin)
+            n_mass = len(mass_bin_counts)
+            if n_mass > 0:
+                hry = ROOT.TH1D("ry_trigger", "", n_mass,
+                                np.array(mass_edges, dtype="d"))
+                for i_ml in range(n_mass):
+                    hry.SetBinContent(i_ml + 1, mass_bin_counts[i_ml])
+            else:
+                hry = ROOT.TH1D("ry_trigger", "", 1, 0., 1.)
+                hry.SetBinContent(1, total_count)
             hry.SetDirectory(0)
             out_file.cd(dir_pt)
             hry.Write("ry_trigger", ROOT.TObject.kOverwrite)
             n_ry += 1
     out_file.Close()
-    print(f"[INFO] Injected {n_ry} ry_trigger into {corr_results_path}")
+    print(f"[INFO] Injected {n_ry} ry_trigger (per-mass-bin) into {corr_results_path}")
 
 
 if __name__ == "__main__":

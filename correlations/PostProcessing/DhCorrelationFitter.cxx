@@ -63,6 +63,10 @@ DhCorrelationFitter::DhCorrelationFitter() : // default constructor
                                              fTempHisto(0x0),
                                              fGraph(0x0),
                                              fSpline(0x0),
+                                             fLMOutput(0x0),
+                                             fTemplateFunc(0x0),
+                                             fTempFunc(0),
+                                             fPairsPerMassBin(0.0),
                                              fMinCorr(0),
                                              fMaxCorr(0),
                                              fBaseline(0.),
@@ -122,6 +126,10 @@ DhCorrelationFitter::DhCorrelationFitter(TH1F* histoToFit, Double_t min, Double_
                                                                                          fTempHisto(0x0),
                                                                                          fGraph(0x0),
                                                                                          fSpline(0x0),
+                                                                                         fLMOutput(0x0),
+                                                                                         fTemplateFunc(0x0),
+                                                                                         fTempFunc(0),
+                                                                                         fPairsPerMassBin(0.0),
                                                                                          fMinCorr(0.),
                                                                                          fMaxCorr(0.),
                                                                                          fBaseline(0.),
@@ -226,6 +234,14 @@ DhCorrelationFitter::~DhCorrelationFitter()
   if (fTempHisto) {
     delete fTempHisto;
     fTempHisto = 0;
+  }
+  if (fLMOutput) {
+    delete fLMOutput;
+    fLMOutput = 0;
+  }
+  if (fTemplateFunc) {
+    delete fTemplateFunc;
+    fTemplateFunc = 0;
   }
   if (fFit) {
     delete fFit;
@@ -759,26 +775,8 @@ void DhCorrelationFitter::SetFitFunction()
       fFit->SetParName(14, "v_{5}_lm");*/
 
       case 10: // template fit
-      // Calculate baseline from the LM template using the original FindBaseline logic.
-      // Temporarily replace fHist with a TH1F copy of fTempHisto so FindBaseline()
-      // operates on the template histogram.
-      if (fFixBase != 0 && fTempHisto) {
-        TH1F* savedHist = fHist;
-        TH1F* tmpHist = new TH1F("tmpLMBaseline", "", fTempHisto->GetNbinsX(),
-                                 fTempHisto->GetXaxis()->GetXmin(),
-                                 fTempHisto->GetXaxis()->GetXmax());
-        for (int i = 1; i <= fTempHisto->GetNbinsX(); i++) {
-          tmpHist->SetBinContent(i, fTempHisto->GetBinContent(i));
-          tmpHist->SetBinError(i, fTempHisto->GetBinError(i));
-        }
-        fHist = tmpHist;
-        FindBaseline();
-        printf("[INFO] DhCorrelationFitter: LM template baseline = %.6f +/- %.6f (subtracted from template)\n",
-               fBaseline, fErrBaseline);
-        fHist = savedHist;
-        delete tmpHist;
-      }
-      intepolateTemp();
+      // Build LM template based on tempFunc (delegated to BuildLMOutput)
+      BuildLMOutput();
       fFit = new TF1("fTotFit", this, &DhCorrelationFitter::TotalTemplateFitFunction, fMinCorr, fMaxCorr, 4);
       
       fFit->SetParName(0, "F (LM Scale)");
@@ -872,32 +870,288 @@ void DhCorrelationFitter::intepolateTemp()
   fSpline = new TSpline3("tempSpline", fGraph);
 }
 
+void DhCorrelationFitter::BuildLMOutput()
+{
+  if (!fTempHisto) {
+    Printf("[ERROR] BuildLMOutput: No template histogram set");
+    return;
+  }
+  // ---- Clean up previous outputs ----
+  if (fLMOutput) { delete fLMOutput; fLMOutput = 0; }
+  if (fTemplateFunc) { delete fTemplateFunc; fTemplateFunc = 0; }
+  if (fSpline) { delete fSpline; fSpline = 0; }
+  if (fGraph) { delete fGraph; fGraph = 0; }
+
+  printf("[INFO] total pairs in template histogram: %.3f\n", fTempHisto->Integral());
+  printf("[INFO] Scaled total pairs in template histogram (scaled by raw-yield ratio): %.3f\n", fTempHisto->Integral() * fPairsPerMassBin);
+  printf("[INFO] total pairs in data histogram: %.3f\n", fHist->Integral());
+
+  // ---- Build template based on tempFunc ----
+  if (fTempFunc == 0) {
+    // --- Raw histogram template: no smooth, no spline, direct bin lookup ---
+    if (fFixBase != 0 && fTempHisto) {
+      TH1F* savedHist = fHist;
+      TH1F* tmpHist = new TH1F("tmpLMBaseline", "", fTempHisto->GetNbinsX(),
+                                fTempHisto->GetXaxis()->GetXmin(),
+                                fTempHisto->GetXaxis()->GetXmax());
+      for (int i = 1; i <= fTempHisto->GetNbinsX(); i++) {
+        tmpHist->SetBinContent(i, fTempHisto->GetBinContent(i));
+        tmpHist->SetBinError(i, fTempHisto->GetBinError(i));
+      }
+      fHist = tmpHist;
+      FindBaseline();
+      printf("[INFO] DhCorrelationFitter: LM template baseline = %.6f +/- %.6f (subtracted from template)\n",
+              fBaseline, fErrBaseline);
+      fHist = savedHist;
+      delete tmpHist;
+    }
+    printf("[INFO] BuildLMOutput: Using raw histogram as LM template (tempFunc=0)\n");
+
+  } else if (fTempFunc == 1) {
+    // --- Raw + spline: no smooth, build spline for interpolation ---------
+    if (fFixBase != 0 && fTempHisto) {
+      TH1F* savedHist = fHist;
+      TH1F* tmpHist = new TH1F("tmpLMBaseline", "", fTempHisto->GetNbinsX(),
+                                fTempHisto->GetXaxis()->GetXmin(),
+                                fTempHisto->GetXaxis()->GetXmax());
+      for (int i = 1; i <= fTempHisto->GetNbinsX(); i++) {
+        tmpHist->SetBinContent(i, fTempHisto->GetBinContent(i));
+        tmpHist->SetBinError(i, fTempHisto->GetBinError(i));
+      }
+      fHist = tmpHist;
+      FindBaseline();
+      printf("[INFO] DhCorrelationFitter: LM template baseline = %.6f +/- %.6f (subtracted from template)\n",
+              fBaseline, fErrBaseline);
+      fHist = savedHist;
+      delete tmpHist;
+    }
+    // Build graph + spline from raw histogram (no Smooth)
+    fGraph = new TGraphErrors(fTempHisto->GetNbinsX());
+    for (int i = 1; i <= fTempHisto->GetNbinsX(); i++) {
+      fGraph->SetPoint(i - 1, fTempHisto->GetBinCenter(i), fTempHisto->GetBinContent(i));
+      fGraph->SetPointError(i - 1, fTempHisto->GetBinWidth(i) / 2.0, fTempHisto->GetBinError(i));
+    }
+    fSpline = new TSpline3("tempSpline", fGraph);
+    printf("[INFO] BuildLMOutput: Using raw+spline LM template (tempFunc=1)\n");
+
+  } else if (fTempFunc == 2) {
+    // --- Smooth + spline --------------------------------------------------
+    if (fFixBase != 0 && fTempHisto) {
+      TH1F* savedHist = fHist;
+      TH1F* tmpHist = new TH1F("tmpLMBaseline", "", fTempHisto->GetNbinsX(),
+                                fTempHisto->GetXaxis()->GetXmin(),
+                                fTempHisto->GetXaxis()->GetXmax());
+      for (int i = 1; i <= fTempHisto->GetNbinsX(); i++) {
+        tmpHist->SetBinContent(i, fTempHisto->GetBinContent(i));
+        tmpHist->SetBinError(i, fTempHisto->GetBinError(i));
+      }
+      fHist = tmpHist;
+      FindBaseline();
+      printf("[INFO] DhCorrelationFitter: LM template baseline = %.6f +/- %.6f (subtracted from template)\n",
+              fBaseline, fErrBaseline);
+      fHist = savedHist;
+      delete tmpHist;
+    }
+    // Smooth then build spline
+    fTempHisto->Smooth(1);
+    fGraph = new TGraphErrors(fTempHisto->GetNbinsX());
+    for (int i = 1; i <= fTempHisto->GetNbinsX(); i++) {
+      fGraph->SetPoint(i - 1, fTempHisto->GetBinCenter(i), fTempHisto->GetBinContent(i));
+      fGraph->SetPointError(i - 1, fTempHisto->GetBinWidth(i) / 2.0, fTempHisto->GetBinError(i));
+    }
+    fSpline = new TSpline3("tempSpline", fGraph);
+    printf("[INFO] BuildLMOutput: Using smooth+spline LM template (tempFunc=2)\n");
+
+  } else if (fTempFunc == 3) {
+    // --- Fit Gaus to LM template ------------------------------------------
+    TVirtualFitter::SetMaxIterations(50000);
+    Double_t minVal = fTempHisto->GetMinimum();
+    Double_t maxVal = fTempHisto->GetMaximum();
+    TF1* fGausFit = new TF1("fGausFit",
+      "[0]+[1]/(TMath::Sqrt(2*TMath::Pi())*[2])*TMath::Exp(-TMath::Power(x,2)/(2*TMath::Power([2],2)))+[3]/(TMath::Sqrt(2*TMath::Pi())*[4])*TMath::Exp(-TMath::Power(x-TMath::Pi(),2)/(2*TMath::Power([4],2)))",
+      fMinCorr, fMaxCorr);
+    fGausFit->SetParameter(0, minVal);
+    fGausFit->SetParLimits(0, 0, maxVal*2);
+    fGausFit->SetParameters(1, 0.5*(maxVal-minVal));
+    fGausFit->SetParLimits(1, 0.01, maxVal-minVal);
+    fGausFit->SetParameter(2, TMath::Pi()/8);
+    fGausFit->SetParLimits(2, TMath::Pi()/16, TMath::Pi());
+    fGausFit->SetParameter(3, 0.5*(maxVal-minVal));
+    fGausFit->SetParLimits(3, 0.01, maxVal-minVal);
+    fGausFit->SetParameter(4, TMath::Pi()/8);
+    fGausFit->SetParLimits(4, TMath::Pi()/16, TMath::Pi());
+    fTempHisto->Fit(fGausFit, "RIS", "", fMinCorr, fMaxCorr);
+
+    fTemplateFunc = static_cast<TF1*>(fTempHisto->GetFunction("fGausFit")->Clone("fLMTemplateFunc"));
+    fTemplateFunc->SetRange(fMinCorr, fMaxCorr);
+    fBaseline = fTemplateFunc->GetMinimum(fMinCorr, fMaxCorr);
+    fErrBaseline = 0.0;
+    printf("[INFO] BuildLMOutput: Fitted Gaus LM template (tempFunc=3) baseline=%.6f\n", fBaseline);
+    delete fGausFit;
+
+  } else if (fTempFunc == 4) {
+    // --- Fit GausPeriodic to LM template ----------------------------------
+    TVirtualFitter::SetMaxIterations(50000);
+    Double_t minVal = fTempHisto->GetMinimum();
+    Double_t maxVal = fTempHisto->GetMaximum();
+    TF1* fGausPerFit = new TF1("fGausPerFit",
+      "[0]+[1]/(TMath::Sqrt(2*TMath::Pi())*[2])*TMath::Exp(-x*x/(2*[2]*[2]))+[1]/(TMath::Sqrt(2*TMath::Pi())*[2])*TMath::Exp(-(x-2*TMath::Pi())*(x-2*TMath::Pi())/(2*[2]*[2]))+[1]/(TMath::Sqrt(2*TMath::Pi())*[2])*TMath::Exp(-(x+2*TMath::Pi())*(x+2*TMath::Pi())/(2*[2]*[2]))+[3]/(TMath::Sqrt(2*TMath::Pi())*[4])*TMath::Exp(-(x-TMath::Pi())*(x-TMath::Pi())/(2*[4]*[4]))+[3]/(TMath::Sqrt(2*TMath::Pi())*[4])*TMath::Exp(-(x-3*TMath::Pi())*(x-3*TMath::Pi())/(2*[4]*[4]))+[3]/(TMath::Sqrt(2*TMath::Pi())*[4])*TMath::Exp(-(x+TMath::Pi())*(x+TMath::Pi())/(2*[4]*[4]))",
+      fMinCorr, fMaxCorr);
+    fGausPerFit->SetParameter(0, minVal);
+    fGausPerFit->SetParLimits(0, 0, maxVal*2);
+    fGausPerFit->SetParameters(1, 0.5*(maxVal-minVal));
+    fGausPerFit->SetParLimits(1, 0.01, maxVal-minVal);
+    fGausPerFit->SetParameter(2, TMath::Pi()/8);
+    fGausPerFit->SetParLimits(2, TMath::Pi()/16, TMath::Pi());
+    fGausPerFit->SetParameter(3, 0.5*(maxVal-minVal));
+    fGausPerFit->SetParLimits(3, 0.01, maxVal-minVal);
+    fGausPerFit->SetParameter(4, TMath::Pi()/8);
+    fGausPerFit->SetParLimits(4, TMath::Pi()/16, TMath::Pi());
+    fTempHisto->Fit(fGausPerFit, "RIS", "", fMinCorr, fMaxCorr);
+
+    fTemplateFunc = static_cast<TF1*>(fTempHisto->GetFunction("fGausPerFit")->Clone("fLMTemplateFunc"));
+    fTemplateFunc->SetRange(fMinCorr, fMaxCorr);
+    fBaseline = fTemplateFunc->GetMinimum(fMinCorr, fMaxCorr);
+    fErrBaseline = 0.0;
+    printf("[INFO] BuildLMOutput: Fitted GausPeriodic LM template (tempFunc=4) baseline=%.6f\n", fBaseline);
+    delete fGausPerFit;
+  }
+
+  // ---- Build fLMOutput (clone of original template data for drawing) ----
+  fLMOutput = (TH1D*)fTempHisto->Clone("fLMOutput");
+  fLMOutput->SetDirectory(0);
+  fLMOutput->SetStats(0);
+  fLMOutput->GetListOfFunctions()->Clear(); // remove fit function from output histogram
+
+  // // ---- Scale template to match data yield (based on fPairsPerMassBin) ----
+  // if (fPairsPerMassBin > 0) {
+  //   Double_t scale = fPairsPerMassBin;
+  //   printf("[INFO] BuildLMOutput: Scaling template by fPairsPerMassBin=%.6f\n", scale);
+
+  //   // Scale the fLMOutput histogram (clone of fTempHisto) — show scaled data in plot
+  //   fLMOutput->Scale(scale);
+
+  //   if (fTempFunc == 1 || fTempFunc == 2) {
+  //     // Rebuild graph and spline from scaled histogram contents
+  //     if (fGraph) { delete fGraph; fGraph = nullptr; }
+  //     if (fSpline) { delete fSpline; fSpline = nullptr; }
+  //     fGraph = new TGraphErrors(fTempHisto->GetNbinsX());
+  //     for (int i = 1; i <= fTempHisto->GetNbinsX(); i++) {
+  //       fGraph->SetPoint(i - 1, fTempHisto->GetBinCenter(i), fTempHisto->GetBinContent(i) * scale);
+  //       fGraph->SetPointError(i - 1, fTempHisto->GetBinWidth(i) / 2.0, fTempHisto->GetBinError(i) * scale);
+  //     }
+  //     fSpline = new TSpline3("tempSpline", fGraph);
+  //     fBaseline *= scale;
+  //     fErrBaseline *= scale;
+  //   } else if (fTempFunc == 3 || fTempFunc == 4) {
+  //     // Scale ALL parameters so f(x) = scale * original_f(x)
+  //     fTemplateFunc->SetParameter(0, fTemplateFunc->GetParameter(0) * scale);
+  //     fTemplateFunc->SetParameter(1, fTemplateFunc->GetParameter(1) * scale);
+  //     fTemplateFunc->SetParameter(3, fTemplateFunc->GetParameter(3) * scale);
+  //     fBaseline *= scale;
+  //     fErrBaseline *= scale;
+  //   }
+  // }
+
+  // ---- Add sub-component functions (near-side, away-side) for drawing ----
+  // Created AFTER scaling so they inherit scaled parameter values
+  if (fTempFunc == 1 || fTempFunc == 2) {
+    if (fSpline) fLMOutput->GetListOfFunctions()->Add(fSpline);
+  }
+  if (fTempFunc == 3 && fTemplateFunc) {
+    fLMOutput->GetListOfFunctions()->Add(fTemplateFunc);
+    // Gaus: near = BL + A_N*Gaus(0,sig_N), away = BL + A_A*Gaus(pi,sig_A)
+    TF1* fNear = new TF1("fNearGaus",
+      "[0]+[1]/(TMath::Sqrt(2*TMath::Pi())*[2])*TMath::Exp(-x*x/(2*[2]*[2]))",
+      fMinCorr, fMaxCorr);
+    fNear->SetParameters(fTemplateFunc->GetParameter(0),
+                         fTemplateFunc->GetParameter(1),
+                         fTemplateFunc->GetParameter(2));
+    fNear->SetLineColor(kAzure+2);
+    fNear->SetLineWidth(2);
+    fNear->SetLineStyle(9);
+    fLMOutput->GetListOfFunctions()->Add(fNear);
+
+    TF1* fAway = new TF1("fAwayGaus",
+      "[0]+[1]/(TMath::Sqrt(2*TMath::Pi())*[2])*TMath::Exp(-(x-TMath::Pi())*(x-TMath::Pi())/(2*[2]*[2]))",
+      fMinCorr, fMaxCorr);
+    fAway->SetParameters(fTemplateFunc->GetParameter(0),
+                         fTemplateFunc->GetParameter(3),
+                         fTemplateFunc->GetParameter(4));
+    fAway->SetLineColor(kGreen+2);
+    fAway->SetLineWidth(2);
+    fAway->SetLineStyle(9);
+    fLMOutput->GetListOfFunctions()->Add(fAway);
+  } else if (fTempFunc == 4 && fTemplateFunc) {
+    // GausPeriodic: near = BL + A_N*[Gaus(0)+Gaus(2pi)+Gaus(-2pi)]
+    TF1* fNear = new TF1("fNearGausPer",
+      "[0]+[1]/(TMath::Sqrt(2*TMath::Pi())*[2])*TMath::Exp(-x*x/(2*[2]*[2]))+[1]/(TMath::Sqrt(2*TMath::Pi())*[2])*TMath::Exp(-(x-2*TMath::Pi())*(x-2*TMath::Pi())/(2*[2]*[2]))+[1]/(TMath::Sqrt(2*TMath::Pi())*[2])*TMath::Exp(-(x+2*TMath::Pi())*(x+2*TMath::Pi())/(2*[2]*[2]))",
+      fMinCorr, fMaxCorr);
+    fNear->SetParameters(fTemplateFunc->GetParameter(0),
+                         fTemplateFunc->GetParameter(1),
+                         fTemplateFunc->GetParameter(2));
+    fNear->SetLineColor(kAzure+2);
+    fNear->SetLineWidth(2);
+    fNear->SetLineStyle(9);
+    fLMOutput->GetListOfFunctions()->Add(fNear);
+
+    TF1* fAway = new TF1("fAwayGausPer",
+      "[0]+[1]/(TMath::Sqrt(2*TMath::Pi())*[2])*TMath::Exp(-(x-TMath::Pi())*(x-TMath::Pi())/(2*[2]*[2]))+[1]/(TMath::Sqrt(2*TMath::Pi())*[2])*TMath::Exp(-(x-3*TMath::Pi())*(x-3*TMath::Pi())/(2*[2]*[2]))+[1]/(TMath::Sqrt(2*TMath::Pi())*[2])*TMath::Exp(-(x+TMath::Pi())*(x+TMath::Pi())/(2*[2]*[2]))",
+      fMinCorr, fMaxCorr);
+    fAway->SetParameters(fTemplateFunc->GetParameter(0),
+                         fTemplateFunc->GetParameter(3),
+                         fTemplateFunc->GetParameter(4));
+    fAway->SetLineColor(kGreen+2);
+    fAway->SetLineWidth(2);
+    fAway->SetLineStyle(9);
+    fLMOutput->GetListOfFunctions()->Add(fAway);
+  }
+  printf("[INFO] DhCorrelationFitter: BuildLMOutput completed for tempFunc=%d\n", fTempFunc);
+}
+
 Double_t DhCorrelationFitter::TemplateFitFunction(Double_t* x, Double_t* par)
 {
-  if (!fSpline) return 0.0; 
+  Double_t templateVal = 0.0;
+  if (fTempFunc == 0) {
+    // Raw histogram: direct bin lookup
+    if (!fTempHisto) return 0.0;
+    templateVal = fTempHisto->GetBinContent(fTempHisto->FindBin(x[0]));
+  } else if (fTempFunc == 1 || fTempFunc == 2) {
+    // Spline interpolation
+    if (!fSpline) return 0.0;
+    templateVal = fSpline->Eval(x[0]);
+  } else if (fTempFunc == 3 || fTempFunc == 4) {
+    // Gaus/GausPeriodic function evaluation
+    if (!fTemplateFunc) return 0.0;
+    templateVal = fTemplateFunc->Eval(x[0]);
+  }
 
-  // todo: it should be baseline instead of the pedestal
   if (fWithPedLM) {
-    return par[0] * fSpline->Eval(x[0]); 
+    return par[0] * templateVal;
   } else {
-    if (fSpline->Eval(x[0]) < fBaseline) {
-      // printf("[WARNING] DhCorrelationFitter::TemplateFitFunction(): Spline value (%.6f) is below baseline (%.6f) at x=%.3f! Setting template contribution to 0 for this point.\n",
-            //  fSpline->Eval(x[0]), fBaseline, x[0]);
-      return 0.0;
-    } else {
-      return par[0] * (fSpline->Eval(x[0]) - fBaseline);
-    }
+    if (templateVal < fBaseline) return 0.0;
+    return par[0] * (templateVal - fBaseline);
   }
 }
 
 Double_t DhCorrelationFitter::TemplateFitFunctionWPed(Double_t* x, Double_t* par)
 {
-  if (!fSpline) return 0.0; 
+  Double_t templateVal = 0.0;
+  if (fTempFunc == 0) {
+    if (!fTempHisto) return 0.0;
+    templateVal = fTempHisto->GetBinContent(fTempHisto->FindBin(x[0]));
+  } else if (fTempFunc == 1 || fTempFunc == 2) {
+    if (!fSpline) return 0.0;
+    templateVal = fSpline->Eval(x[0]);
+  } else if (fTempFunc == 3 || fTempFunc == 4) {
+    if (!fTemplateFunc) return 0.0;
+    templateVal = fTemplateFunc->Eval(x[0]);
+  }
 
   if (fWithPedLM) {
-    return par[0] * fSpline->Eval(x[0]) + par[1];
+    return par[0] * templateVal + par[1];
   } else {
-    return par[0] * (fSpline->Eval(x[0]) - fBaseline) + par[1];
+    return par[0] * (templateVal - fBaseline) + par[1];
   }
 }
 

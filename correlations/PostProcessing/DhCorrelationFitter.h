@@ -73,6 +73,8 @@ class DhCorrelationFitter
     fv2Dmeson = v2Dmeson;
   }
   void SetLMTemplate(TH1D* tempHisto) { fTempHisto = tempHisto; }
+  void SetTempFunc(Int_t tempFunc) { fTempFunc = tempFunc; }
+  void SetLMPairs(Double_t pairs) { fPairsPerMassBin = pairs; }
   void SetRyTrigger(Double_t val, Double_t err) { fRyTrigger = val; fRyTriggerErr = err; }
   void SetLMRyTrigger(Double_t val, Double_t err) { fLMRyTrigger = val; fLMRyTriggerErr = err; }
   void SetWithPedLM(Bool_t withPed) { fWithPedLM = withPed; }
@@ -91,6 +93,7 @@ class DhCorrelationFitter
   void SetSingleTermsForDrawing(Bool_t draw);
   Double_t FindBaseline();
   void intepolateTemp();
+  void BuildLMOutput();
 
   /// Getters
   Double_t GetNSSigma() { return fFit->GetParameter("NS #sigma"); } // TODO: case kConstThreeGausPeriodicity
@@ -119,6 +122,9 @@ class DhCorrelationFitter
   Double_t GetBinCountingASYield() { return fASyieldBinCount; }
   Double_t GetBinCountingNSYieldErr() { return fErrNSyieldBinCount; }
   Double_t GetBinCountingASYieldErr() { return fErrASyieldBinCount; }
+  TH1D* GetLMOutput() { return fLMOutput; }
+  TF1* GetLMTemplateFunc() { return fTemplateFunc; }
+  Int_t GetTempFunc() { return fTempFunc; }
   TF1* GetFitFunction()
   {
     if (!fFit) {
@@ -131,6 +137,8 @@ class DhCorrelationFitter
  private:
   TH1F* fHist; // 1D azimuthal correlation histogram
   TH1D* fTempHisto; // 1D histogram for the template fit function
+  TH1D* fLMOutput; // LM template histogram clone (for drawing hLM_template)
+  TF1* fTemplateFunc; // LM template function (from Gaus/GausPeriodic fit)
   TGraphErrors* fGraph; // Graph created from the template histogram for interpolation in the fit function
   TSpline3* fSpline;
 
@@ -166,6 +174,7 @@ class DhCorrelationFitter
   Int_t fFixMean;         // Fix means or keep them as free parameters (see Fitting())
   Int_t fNpars;           // Number of parameters of the fit function
   Int_t fNbasleinePoints; // Number of points passed as inputs for the baseline estimation
+  Int_t fTempFunc;        // Template function type (0=raw, 1=raw+spline, 2=smooth+spline, 3=Gaus, 4=GausPeriodic)
 
   Int_t* fBinsBaseline; // Bin values for calculating the baseline
 
@@ -188,6 +197,7 @@ class DhCorrelationFitter
   Double_t fRyTriggerErr;       // uncertainty of fRyTrigger
   Double_t fLMRyTrigger;        // raw yield of trigger (D meson) from mass fit (LM template)
   Double_t fLMRyTriggerErr;     // uncertainty of fLMRyTrigger
+  Double_t fPairsPerMassBin;    // pairs per mass bin for scaling LM template
 
   Double_t* fExtParsVals;      // Fit parameters initial values
   Double_t* fExtParsLowBounds; // Fit parameters lower bounds
