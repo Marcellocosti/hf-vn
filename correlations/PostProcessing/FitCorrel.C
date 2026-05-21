@@ -61,7 +61,7 @@ void SetTH1HistoStyle(TH1F*& histo, TString hTitle, TString hXaxisTitle, TString
                       Float_t hTitleXaxisSize = 0.045, Float_t hTitleYaxisSize = 0.045, Float_t hLabelXaxisSize = 0.045, Float_t hLabelYaxisSize = 0.045,
                       Bool_t centerXaxisTitle = false, Bool_t centerYaxisTitle = false);
 
-void FitCorrel(const TString cfgFileName = "config_CorrAnalysis.json")
+void FitCorrel(const TString cfgFileName = "config_CorrAnalysis.json", const TString yamlFileName = "config.yml")
 {
   gStyle->SetOptStat(0);
   gStyle->SetPadLeftMargin(0.2);
@@ -162,8 +162,7 @@ void FitCorrel(const TString cfgFileName = "config_CorrAnalysis.json")
   bool lmTemplate = true;
 
   // YAML config
-  string yamlConfigFile = "/home/wuct/MetaData/DATA/OO/apass2/corr/results/fthlook_Biao/large/k020/CorrelExtract_0d8_1d3_1limits/config_CorrAnalysis_v2_010_negDeta_0d8_1d3_1limits.yaml";
-  YAML::Node yamlConfig = YAML::LoadFile(yamlConfigFile);
+  YAML::Node yamlConfig = YAML::LoadFile(yamlFileName.Data());
   string outdir = yamlConfig["outdir"].as<std::string>();
   string suffix = yamlConfig["suffix"].as<std::string>();
   string outdirLM;
@@ -171,7 +170,6 @@ void FitCorrel(const TString cfgFileName = "config_CorrAnalysis.json")
   if (yamlConfig["task_LM"] && yamlConfig["task_LM"]["do"].as<bool>()) {
     outdirLM = yamlConfig["task_LM"]["outdir"].as<std::string>();
     inputLMFile = outdirLM + "/CorrelExtract_" + suffix + "/AssociatedPairsYields/PairYieldsVsPhi.root";
-
   }
   string inputFile = outdir + "/CorrelExtract_" + suffix + "/AssociatedPairsYields/PairYieldsVsPhi.root";
   string outputPath = outdir + "/CorrelExtract_" + suffix + "/CorrelationFitResults/";
@@ -180,7 +178,7 @@ void FitCorrel(const TString cfgFileName = "config_CorrAnalysis.json")
     cout << "No input LM template file provided, will not perform template fit" << endl;
     for (int iFunc=0; iFunc < nBinsPtCand; iFunc++) {
       fitFunc[iFunc] = 8;
-    }  
+    }
   } else {
     cout << "Input LM template file: " << inputLMFile << endl;
   }
