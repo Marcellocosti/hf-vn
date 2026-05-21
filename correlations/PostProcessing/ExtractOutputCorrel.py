@@ -9,6 +9,7 @@ import yaml
 import argparse
 from ROOT import gSystem
 script_dir = os.path.dirname(os.path.realpath(__file__))
+sys.path.append(os.path.join(script_dir, '../../', 'utils'))
 gSystem.CompileMacro(f"{script_dir}/DhCorrelationExtraction.cxx", "kO")
 from ROOT import DhCorrelationExtraction as CorrelExtractor
 from alive_progress import alive_bar
@@ -72,15 +73,22 @@ def process_correlation_task(tempExtractor, task):
 
     results = {}
     results["task"] = task
-
+    print(f"[DEBUG] Processing task: ptCand bin {iPtCand} ({ptMin}-{ptMax} GeV/c), ptHad bin {iPtHad} ({ptHadMin}-{ptHadMax} GeV/c), invMass bin {iMass} ({invMassMin}-{invMassMax} GeV/c^2)")
     extractor.SetRebin2DcorrelHisto(rebinDeltaEta, rebinDeltaPhi)
+    print(f"[DEBUG] Set rebinning for 2D correlation histogram: deltaEta rebin {rebinDeltaEta}, deltaPhi rebin {rebinDeltaPhi}")
     extractor.SetCandAndHadBins((ptMin, ptMax), (ptHadMin, ptHadMax))
+    print(f"[DEBUG] Set candidate pt bin: {ptMin}-{ptMax} GeV/c, associated hadron pt bin: {ptHadMin}-{ptHadMax} GeV/c")
     extractor.SetInvMassBins((invMassMin, invMassMax))
+    print(f"[DEBUG] Set invariant mass bin: {invMassMin}-{invMassMax} GeV/c^2")
     if task["method"] == "DeltaPhiBinning":
+        print(f"[DEBUG] Using DeltaPhiBinning method, setting deltaPhi bins: {task['deltaPhiMin']}-{task['deltaPhiMax']} rad")
         extractor.SetMethod(CorrelExtractor.kDeltaPhiBinning)
+        print(f"[DEBUG] Set method to DeltaPhiBinning")
         deltaPhiMin = task["deltaPhiMin"]
         deltaPhiMax = task["deltaPhiMax"]
+        print(f"[DEBUG] Set deltaPhi bins: {deltaPhiMin}-{deltaPhiMax} rad")
         extractor.SetDeltaPhiBins((deltaPhiMin, deltaPhiMax))
+        print(f"[DEBUG] Set deltaPhi bins in extractor: {deltaPhiMin}-{deltaPhiMax} rad")
     extractor.ExtractCorrelations()
 
     results['hCorrectedCorrel'] = extractor.GetCorrectedCorrel()
@@ -133,7 +141,7 @@ def ExtractOutputCorrel(cfgFile):
     doPoolByPool = config.get("doPoolByPool", False)
     method = config.get("method", "MassBinning")
     deltaEtaIntegrated = config.get("deltaEtaIntegrated", True)
-
+    print(f"[INFO] Using method: {method}")
     # Binning operations
     ptBinsCand = config["ptBinsCand"]
     ptBinsHad = config["ptBinsHad"]
@@ -142,9 +150,10 @@ def ExtractOutputCorrel(cfgFile):
     deltaPhiBins = list(np.linspace(-1.5707963705062866, 4.71238911151886, nDeltaPhiBins+1))  # default 64 bins from -pi/2 to 3pi/2
     rebinsDeltaEta = get_pt_dependent_param(config.get("rebinDeltaEta", 1), len(ptBinsCand)-1, isList=False)
     rebinsDeltaPhi = get_pt_dependent_param(config.get("rebinDeltaPhi", 1), len(ptBinsCand)-1, isList=False)
-
+    print(f"[INFO] Using pt bins for candidates: {ptBinsCand}")
     # Optional settings
     debug = config.get("debug", 0)
+    print(f"[INFO] doSecPartContamination: {doSecPartContamination}, doRebinSecPart: {doRebinSecPart}, debug level: {debug}")
 
     # Define the default extractor
     if config['sparseSE'] or config['sparseME'] or config['sparseMass']:
@@ -158,6 +167,7 @@ def ExtractOutputCorrel(cfgFile):
     if Dmeson == "D0" or Dmeson == "Dzero":
         tempExtractor.SetDmesonSpecie(0)
     elif Dmeson == "Dplus":
+        print(f"[WARNING] Dplus specie selected")
         tempExtractor.SetDmesonSpecie(1)
     elif Dmeson == "Ds":
         tempExtractor.SetDmesonSpecie(2)
@@ -179,6 +189,7 @@ def ExtractOutputCorrel(cfgFile):
     tempExtractor.SetBinDeltaEtaRight(deltaEtaBins[1][0], deltaEtaBins[1][1])
     tempExtractor.SetDebugLevel(debug)
 
+    print(f"[INFO] Starting correlation extraction with method {method}...")
     outdirFull = os.path.join(outdir, f"CorrelExtract_{suffix}")
     logger(f"Output directory for correlation extraction: {outdirFull}", level="INFO")
     if not os.path.exists(outdirFull):
@@ -189,14 +200,18 @@ def ExtractOutputCorrel(cfgFile):
     outdirMass = os.path.join(outdir, "InvMass")
     if not os.path.exists(outdirMass):
         os.makedirs(outdirMass)
-    
+
+    print(f"[INFO] Output directory for correlation results: {outdirFull}")
     # mass vs pt
     tempExtractor.ProjMassVsPt()
+    print(f"[INFO] Extracting mass vs pt histogram...")
     hMassVsPt = tempExtractor.GetMassVsPtHist2D()
     outMassVsPtFile = TFile(os.path.join(outdirMass, f"InvMassVsPt.root"), "RECREATE")
     hMassVsPt.Write()
+    print(f"[INFO] Mass vs pt histogram saved to {outMassVsPtFile.GetName()}")
     outMassVsPtFile.Close()
 
+    print(f"[INFO] Extracting correlations for each pt bin, associated hadron pt bin, and inv. mass bin...")
     # extract for all pt bins, associated hadron pt bins, and inv. mass bins
     tasks = []
     for iPtCand, (ptMin, ptMax, rebinDeltaEta, rebinDeltaPhi) in enumerate(zip(ptBinsCand[:-1], ptBinsCand[1:], rebinsDeltaEta, rebinsDeltaPhi)):
@@ -224,6 +239,7 @@ def ExtractOutputCorrel(cfgFile):
                         }
                         tasks.append(task)
 
+    print(f"[INFO] Total number of correlation extraction tasks: {len(tasks)}")
     all_results = []
     with alive_bar(len(tasks), title="Processing correlation tasks") as bar:
         with ProcessPoolExecutor(max_workers=nWorkers) as executor:
@@ -237,11 +253,13 @@ def ExtractOutputCorrel(cfgFile):
                     print(f"[ERROR] Task {task} generated an exception: {exc}")
                 bar()
 
+    print(f"[INFO] Finished processing all correlation tasks. Total results: {len(all_results)}")
     if method == "MassBinning":
         all_results.sort(key=lambda x: (x['task']['iMass'], x['task']['iPtHad'], x['task']['iPtCand']))
     elif method == "DeltaPhiBinning":
         all_results.sort(key=lambda x: (x['task']['iMass'], x['task']['iPtHad'], x['task']['iPtCand'], x['task']['iDeltaPhi']))
 
+    print(f"[INFO] Saving correlation results to output files...")
     # Save outputs
     outdirCorrelation = os.path.join(outdirFull, "CorrelationsResults")
     if not os.path.exists(outdirCorrelation):
@@ -250,6 +268,7 @@ def ExtractOutputCorrel(cfgFile):
     outFiles = [outHistFile] # can be extended in the future if we want to save different histograms in different files
     logger(f"Saving output histograms to {outdirFull}/{outHistFile.GetName()}", level="INFO")
 
+    print(f"[INFO] Created output ROOT files for correlation results: {', '.join([file.GetName() for file in outFiles])}")
     for results in all_results:
         subOutdirPtCand = f"PtCandBin_{int(results['task']['ptMin']*10):.0f}_{int(results['task']['ptMax']*10):.0f}"
         subOutdirPtHad = f"PtHadBin_{int(results['task']['ptHadMin']*10):.0f}_{int(results['task']['ptHadMax']*10):.0f}"
@@ -313,7 +332,7 @@ def ExtractOutputCorrel(cfgFile):
             results['hCorrectedPairsMass'].Write()
         if results.get('hCorrectionRatio'):
             results['hCorrectionRatio'].Write()
-        
+
         if results.get('hCorrel_SE_2D'):
             results['hCorrel_SE_2D'].Write()
         if results.get('hCorrel_ME_2D'):

@@ -720,57 +720,57 @@ class RawYieldFitter:
                 RooFit.DrawOption("PE0")  # vertical error bars, no endcaps
             )
 
-            legend_dummies = []
-            # Create a dummy TGraph with one point
-            dummy_data = ROOT.TGraph(1)
-            dummy_data.SetMarkerStyle(ROOT.kFullCircle)
-            dummy_data.SetMarkerColor(ROOT.kBlack)
-            dummy_data.SetMarkerSize(0.8)
-            self.legend.AddEntry(dummy_data, "Data", "pe")
-            legend_dummies.append(dummy_data)  # keep reference
+            # legend_dummies = []
+            # # Create a dummy TGraph with one point
+            # dummy_data = ROOT.TGraph(1)
+            # dummy_data.SetMarkerStyle(ROOT.kFullCircle)
+            # dummy_data.SetMarkerColor(ROOT.kBlack)
+            # dummy_data.SetMarkerSize(0.8)
+            # self.legend.AddEntry(dummy_data, "Data", "pe")
+            # legend_dummies.append(dummy_data)  # keep reference
 
-            # --- Add entries for model components ---
-            for label, pdf_dict in self.fit_model.items():
-                info = pdf_dict.get("plot_info", {})
+            # # --- Add entries for model components ---
+            # for label, pdf_dict in self.fit_model.items():
+            #     info = pdf_dict.get("plot_info", {})
 
-                # Plot the PDF on the frame
-                args = [frame, RooFit.Components(pdf_dict["label"]), RooFit.Range("fit")]
-                if "line_color" in info: args.append(RooFit.LineColor(info["line_color"]))
-                if "line_width" in info: args.append(RooFit.LineWidth(info["line_width"]))
-                if "line_style" in info: args.append(RooFit.LineStyle(info["line_style"]))
-                if "fill_color" in info: args.append(RooFit.FillColor(info["fill_color"]))
-                if "fill_style" in info: args.append(RooFit.FillStyle(info["fill_style"]))
-                if "draw_option" in info: args.append(RooFit.DrawOption(info["draw_option"]))
+            #     # Plot the PDF on the frame
+            #     args = [frame, RooFit.Components(pdf_dict["label"]), RooFit.Range("fit")]
+            #     if "line_color" in info: args.append(RooFit.LineColor(info["line_color"]))
+            #     if "line_width" in info: args.append(RooFit.LineWidth(info["line_width"]))
+            #     if "line_style" in info: args.append(RooFit.LineStyle(info["line_style"]))
+            #     if "fill_color" in info: args.append(RooFit.FillColor(info["fill_color"]))
+            #     if "fill_style" in info: args.append(RooFit.FillStyle(info["fill_style"]))
+            #     if "draw_option" in info: args.append(RooFit.DrawOption(info["draw_option"]))
 
-                self.model.plotOn(*args)
+            #     self.model.plotOn(*args)
 
-                # Create persistent dummy for legend
-                if info.get("draw_option", "L") == "F":
-                    dummy = TBox(0,0,1,1)
-                    dummy.SetFillColor(info["fill_color"])
-                    dummy.SetFillStyle(info["fill_style"])
-                    self.legend.AddEntry(dummy, label, "f")
-                else:
-                    dummy = TLine(0,0,1,1)
-                    dummy.SetLineColor(info["line_color"])
-                    dummy.SetLineWidth(info.get("line_width", 2))
-                    dummy.SetLineStyle(info.get("line_style", 1))
-                    self.legend.AddEntry(dummy, label, "l")
+            #     # Create persistent dummy for legend
+            #     if info.get("draw_option", "L") == "F":
+            #         dummy = TBox(0,0,1,1)
+            #         dummy.SetFillColor(info["fill_color"])
+            #         dummy.SetFillStyle(info["fill_style"])
+            #         self.legend.AddEntry(dummy, label, "f")
+            #     else:
+            #         dummy = TLine(0,0,1,1)
+            #         dummy.SetLineColor(info["line_color"])
+            #         dummy.SetLineWidth(info.get("line_width", 2))
+            #         dummy.SetLineStyle(info.get("line_style", 1))
+            #         self.legend.AddEntry(dummy, label, "l")
 
-                legend_dummies.append(dummy)  # keep reference
+            #     legend_dummies.append(dummy)  # keep reference
 
-            # --- Total fit curve ---
-            total_curve = self.model.plotOn(
-                frame,
-                RooFit.Range("fit"),
-                RooFit.LineColor(ROOT.kAzure + 4),
-                RooFit.LineWidth(6)
-            )
-            dummy = TLine(0,0,1,1)
-            dummy.SetLineColor(ROOT.kAzure + 4)
-            dummy.SetLineWidth(6)
-            self.legend.AddEntry(dummy, "Total fit", "l")
-            legend_dummies.append(dummy)  # keep reference
+            # # --- Total fit curve ---
+            # total_curve = self.model.plotOn(
+            #     frame,
+            #     RooFit.Range("fit"),
+            #     RooFit.LineColor(ROOT.kAzure + 4),
+            #     RooFit.LineWidth(4)
+            # )
+            # dummy = TLine(0,0,1,1)
+            # dummy.SetLineColor(ROOT.kAzure + 4)
+            # dummy.SetLineWidth(4)
+            # self.legend.AddEntry(dummy, "Total fit", "l")
+            # legend_dummies.append(dummy)  # keep reference
 
             # --- Canvas ---
             canvas = TCanvas("fit_canvas", "Fit Canvas", 600, 600)
@@ -794,7 +794,7 @@ class RawYieldFitter:
             frame.Draw()
             self.legend.Draw()
 
-                # --- Optional: Canvas title using TLatex ---
+            # --- Optional: Canvas title using TLatex ---
             # canva_title = f"{self.pt_min} < #it{{p}}_{{T}} < {self.pt_max} GeV/#it{{c}}, " \
             #               f"{self.sp_range_min:.2f} < SP < {self.sp_range_max:.2f}" \
             #               if self.sp_range_min != -4. or self.sp_range_max != 4. \
@@ -820,6 +820,7 @@ class RawYieldFitter:
                 out_file.cd()
                 canvas.Write(f"fit_canvas_{self.fit_name}")
 
+            frame.Print("v")
             if self.verbose:
                 logger(f"Plot saved to {path}", "INFO")
 

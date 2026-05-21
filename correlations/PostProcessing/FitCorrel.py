@@ -38,7 +38,10 @@ ROOT.gErrorIgnoreLevel = ROOT.kWarning
 # ===================================================================
 # Compile DhCorrelationFitter C++ class
 # ===================================================================
-ROOT.gSystem.AddIncludePath("-I/home/wuct/Software/miniforge3/envs/alice/include")
+ROOT.gSystem.AddIncludePath("-I/home/mdicosta/local/include")
+ROOT.gSystem.AddDynamicPath("/home/mdicosta/local/lib")
+ROOT.gSystem.Load("libyaml-cpp")
+# ROOT.gSystem.AddIncludePath("-I/home/wuct/Software/miniforge3/envs/alice/include")
 _fitter_cxx = os.path.join(os.path.dirname(__file__), "DhCorrelationFitter.cxx")
 ROOT.gSystem.CompileMacro(_fitter_cxx, "kO")
 from ROOT import DhCorrelationFitter
@@ -139,10 +142,12 @@ def fit_correl(cfg_path):
 
     pair_yields_path = os.path.join(extract_dir, "AssociatedPairsYields",
                                     "PairYieldsVsPhi.root")
+    print(f"pair_yields_path: {pair_yields_path}")
     correlations_path = os.path.join(extract_dir, "CorrelationsResults",
                                      "CorrelationsResults.root")
 
     use_pairs_file = os.path.exists(pair_yields_path)
+    print(f"Will use use_pairs_file? {use_pairs_file}")
     input_file_path = pair_yields_path if use_pairs_file else correlations_path
 
     if not os.path.exists(input_file_path):
@@ -208,14 +213,17 @@ def fit_correl(cfg_path):
     method = config.get("method", "DeltaPhiBinning")
     task_lm = config.get("task_LM", {})
     lm_template_path = None
+    print(f"[INFO] LM template config: {task_lm}")
     if task_lm and task_lm.get("do", False):
         lm_outdir = task_lm.get("outdir", "")
         if lm_outdir:
             if method == "MassBinning":
+                print(f"[INFO] Looking for LM template in CorrelationsResults.root")
                 lm_template_path = os.path.join(
                     lm_outdir, f"CorrelExtract_{suffix}",
                     "CorrelationsResults", "CorrelationsResults.root",
                 )
+                print(f"[INFO] LM template path: {lm_template_path}")
             else:
                 lm_template_path = os.path.join(
                     lm_outdir, f"CorrelExtract_{suffix}",
@@ -239,6 +247,7 @@ def fit_correl(cfg_path):
 
     # If no LM template, force all to type 8
     if lm_template_path is None:
+        print(f"lm_template_path is None, forcing all fit functions to type 8")
         for i in range(n_pt_cand):
             fit_functions[i] = DhCorrelationFitter.kV2DeltaModulationLowMult
         print("[INFO] No LM template — all fit functions forced to type 8")
@@ -287,11 +296,15 @@ def fit_correl(cfg_path):
         sys.exit(1)
 
     in_file_lm = None
+    print("CIAOOOO")
     if lm_template_path:
+        print(f"[INFO] Attempting to open LM template: {lm_template_path}")
         in_file_lm = ROOT.TFile.Open(lm_template_path)
+        print(f"in_file_lm: {in_file_lm}")
         if not in_file_lm or in_file_lm.IsZombie():
             print(f"[WARNING] Could not open LM template: {lm_template_path}")
             in_file_lm = None
+    # sys.exit(1)
 
     # ---- Fit range -------------------------
     f_min = -0.5 * math.pi
@@ -359,6 +372,7 @@ def fit_correl(cfg_path):
     # For !use_pairs_file (MassBinning): each mass_combos entry carries
     #   its own (i_pt_cand, mass_min, mass_max).
     for i_mass_global, mass_combo in enumerate(mass_combos):
+        print(f"\n[INFO] Processing mass combo {i_mass_global + 1}/{n_mass_total}")
         if len(mass_combo) == 4:
             mass_i_pt, mass_i_local, mass_min, mass_max = mass_combo
         else:
@@ -412,9 +426,12 @@ def fit_correl(cfg_path):
 
                 # ---- LM template -----------------------------------------
                 h_corr_lm = None
+                print(f"    Looking for LM template histogram at: {in_file_lm}")
                 if in_file_lm:
+                    print(f"    Attempting to get LM template from: {hist_path}")
                     h_corr_lm = in_file_lm.Get(hist_path)
                     if not h_corr_lm:
+                        print(f"    LM template not found at: {hist_path}")
                         alt_path = (f"{pc_dir}/{ph_dir}/hPairsYields_vs_DeltaPhi")
                         h_corr_lm = in_file_lm.Get(alt_path)
                         if h_corr_lm:
