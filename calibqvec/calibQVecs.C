@@ -6,6 +6,25 @@
 #include "TMath.h"
 #include "runinfo_test.h"
 
+enum Detectors {
+  kFT0C = 0,
+  kFT0A,
+  kFT0M,
+  kFV0A,
+  kTPCPOS,
+  kTPCNEG,
+  kTPCALL,
+  kNDetectors
+};
+
+struct DetectorConfig {
+    std::string name;
+    std::string file;
+    std::string ref;
+};
+
+using DetectorMap = std::array<DetectorConfig, kNDetectors>;
+
 void Recenter(TH2* h, std::vector<double>& corr){
     corr.push_back(h->GetMean(1));
     corr.push_back(h->GetMean(2));
@@ -74,11 +93,14 @@ TH2F* ProjQxQyCentDiff(TH3F* hQxQyCentUncor, float zmin, float zmax, TFile* c){
 }
 
 
-std::vector<double> fillCorrections(string detector, string fname, string dirname, string ref, int nmode){
-    TFile* fin = new TFile(Form("%s.root",fname.c_str()),"read");
+std::vector<double> fillCorrections(string outdir, string detector, string fname, string dirname, string ref, int nmode){
+    TFile* fin = new TFile(fname.data(), "read");
     TH3F* hQxQyCentUncor = (TH3F*)fin->Get(Form("%s/histQvec%sUncorV%d",dirname.c_str(),ref.c_str(),nmode));
 
-    TFile* c = new TFile(Form("/home/mdicosta/DMesonEsE/RedQCalib/LocalTest/debugQvecs_%s_commented.root",detector.c_str()), "recreate");
+    std::cout << "Creating file "
+              << Form("%s/debugQvecs_%s.root", outdir.c_str(), detector.c_str())
+              << " for debugging purposes..." << std::endl;
+    TFile* c = new TFile(Form("%s/debugQvecs_%s.root", outdir.c_str(), detector.c_str()), "recreate");
     const int nCentBins = 100;      // 1% centrality differential
     TH2F* hQvecUncor[nCentBins];
     std::vector<double> CorUncor;
@@ -97,48 +119,53 @@ std::vector<double> fillCorrections(string detector, string fname, string dirnam
     return CorUncor;
 }
 
-void makeHist(int runId, string ext1Id, string ext2Id, ULong64_t sor, ULong64_t eor, int vn){
+
+void makeHist(std::string outDir, const DetectorMap& detMap, int runId, string ext1Id, string ext2Id, ULong64_t sor, ULong64_t eor, int vn, TFile* corrFile){
 
     int nCentBins = 100;
     int nDetectorBins = 10;
     int nCorrectionParams = 6;
+
 
     TH3F* hCCDB = new TH3F("ccdb","",
                            nCentBins,0,nCentBins,                          // cent
                            nCorrectionParams,0-0.5,nCorrectionParams-0.5,  // const
                            nDetectorBins,0-0.5,nDetectorBins-0.5);         // det
 
-    std::string inputFile = "/home/mdicosta/DMesonEsE/RedQCalib/LocalTest/AnalysisResultsTest";
     std::cout << "Filling corrections for FT0C ... " << std::endl;
-    std::vector<double> QvecCorFT0C   = fillCorrections("FT0C", inputFile, "q-vectors-correction", "", vn);
-    std::cout << "Filling corrections for TPCPOS ... " << std::endl;
-    std::vector<double> QvecCorTPCPOS = fillCorrections("TPCPOS", inputFile, "q-vectors-correction", "RefA", vn);
-    std::cout << "Filling corrections for TPCNEG ... " << std::endl;
-    std::vector<double> QvecCorTPCNEG = fillCorrections("TPCNEG", inputFile, "q-vectors-correction", "RefB", vn);
-    std::cout << "Filling corrections for FV0A ... " << std::endl;
-    std::vector<double> QvecCorFV0A   = fillCorrections("FV0A", inputFile, "q-vectors-correction", "", vn);
+    std::vector<double> QvecCorFT0C   = fillCorrections(outDir, detMap[kFT0C].name,   detMap[kFT0C].file,   "q-vectors-correction", detMap[kFT0C].ref,   vn);
     std::cout << "Filling corrections for FT0A ... " << std::endl;
-    std::vector<double> QvecCorFT0A   = fillCorrections("FT0A", inputFile, "q-vectors-correction", "RefA", vn);
+    std::vector<double> QvecCorFT0A   = fillCorrections(outDir, detMap[kFT0A].name,   detMap[kFT0A].file,   "q-vectors-correction", detMap[kFT0A].ref,   vn);
     std::cout << "Filling corrections for FT0M ... " << std::endl;
-    std::vector<double> QvecCorFT0M   = fillCorrections("FT0M", inputFile, "q-vectors-correction", "RefB", vn);
+    std::vector<double> QvecCorFT0M   = fillCorrections(outDir, detMap[kFT0M].name,   detMap[kFT0M].file,   "q-vectors-correction", detMap[kFT0M].ref,   vn);
+    std::cout << "Filling corrections for FV0A ... " << std::endl;
+    std::vector<double> QvecCorFV0A   = fillCorrections(outDir, detMap[kFV0A].name,   detMap[kFV0A].file,   "q-vectors-correction", detMap[kFV0A].ref,   vn);
+    std::cout << "Filling corrections for TPCPOS ... " << std::endl;
+    std::vector<double> QvecCorTPCPOS = fillCorrections(outDir, detMap[kTPCPOS].name, detMap[kTPCPOS].file, "q-vectors-correction", detMap[kTPCPOS].ref, vn);
+    std::cout << "Filling corrections for TPCNEG ... " << std::endl;
+    std::vector<double> QvecCorTPCNEG = fillCorrections(outDir, detMap[kTPCNEG].name, detMap[kTPCNEG].file, "q-vectors-correction", detMap[kTPCNEG].ref, vn);
     std::cout << "Filling corrections for TPCALL ... " << std::endl;
-    std::vector<double> QvecCorTPCall = fillCorrections("TPCALL", inputFile, "q-vectors-correction", "", vn);
+    std::vector<double> QvecCorTPCall = fillCorrections(outDir, detMap[kTPCALL].name, detMap[kTPCALL].file, "q-vectors-correction", detMap[kTPCALL].ref, vn);
 
     for(int i=0;i<nCentBins;i++){
         for(int j=0;j<nCorrectionParams;j++){
-            hCCDB->SetBinContent(i+1, j+1, 1, QvecCorFT0C.at(j + i*6));      // Recenter (2 pars), Twist (2 pars), Rescale (2 pars)
-            hCCDB->SetBinContent(i+1, j+1, 2, QvecCorFT0A.at(j + i*6));      // for each 1% centrality bin
-            hCCDB->SetBinContent(i+1, j+1, 3, QvecCorFT0M.at(j + i*6));
-            hCCDB->SetBinContent(i+1, j+1, 4, QvecCorFV0A.at(j + i*6));
-            hCCDB->SetBinContent(i+1, j+1, 5, QvecCorTPCPOS.at(j + i*6));
-            hCCDB->SetBinContent(i+1, j+1, 6, QvecCorTPCNEG.at(j + i*6));
-            hCCDB->SetBinContent(i+1, j+1, 7, QvecCorTPCall.at(j + i*6));
+            hCCDB->SetBinContent(i+1, j+1, kFT0C+1, QvecCorFT0C.at(j + i*6));      // Recenter (2 pars), Twist (2 pars), Rescale (2 pars)
+            hCCDB->SetBinContent(i+1, j+1, kFT0A+1, QvecCorFT0A.at(j + i*6));      // for each 1% centrality bin
+            hCCDB->SetBinContent(i+1, j+1, kFT0M+1, QvecCorFT0M.at(j + i*6));
+            hCCDB->SetBinContent(i+1, j+1, kFV0A+1, QvecCorFV0A.at(j + i*6));
+            hCCDB->SetBinContent(i+1, j+1, kTPCPOS+1, QvecCorTPCPOS.at(j + i*6));
+            hCCDB->SetBinContent(i+1, j+1, kTPCNEG+1, QvecCorTPCNEG.at(j + i*6));
+            hCCDB->SetBinContent(i+1, j+1, kTPCALL+1, QvecCorTPCall.at(j + i*6));
 
-            hCCDB->SetBinContent(i+1, j+1, 8, QvecCorTPCNEG.at(j + i*6)); //dummy
-            hCCDB->SetBinContent(i+1, j+1, 9, QvecCorTPCNEG.at(j + i*6)); //dummy
-            hCCDB->SetBinContent(i+1, j+1, 10, QvecCorTPCNEG.at(j + i*6)); //dummy
+            hCCDB->SetBinContent(i+1, j+1, 8, QvecCorTPCNEG.at(j + i*6));   // dummy
+            hCCDB->SetBinContent(i+1, j+1, 9, QvecCorTPCNEG.at(j + i*6));   // dummy
+            hCCDB->SetBinContent(i+1, j+1, 10, QvecCorTPCNEG.at(j + i*6));  // dummy
         }
     }
+
+    corrFile->mkdir(Form("%d/v%d", runId, vn));
+    corrFile->cd(Form("%d/v%d", runId, vn));
+    hCCDB->Write();
 
     // const string ccdbPath = "http://alice-ccdb.cern.ch";
     // const string ccdbInternalPath = "Users/m/mdicosta/Qvector/Pass4/QvecCalib";
@@ -168,13 +195,43 @@ void makeHist(int runId, string ext1Id, string ext2Id, ULong64_t sor, ULong64_t 
     // // metadata.clear();
 }
 
-void calibQVecs(){
+void calibQVecs(std::string outDir, 
+                std::string inFileFT0A,
+                std::string whichDetFT0A,
+                std::string inFileFT0C,
+                std::string whichDetFT0C,
+                std::string inFileFT0M,
+                std::string whichDetFT0M,
+                std::string inFileFV0A,
+                std::string whichDetFV0A,
+                std::string inFileTPCPOS,
+                std::string whichDetTPCPOS,
+                std::string inFileTPCNEG,
+                std::string whichDetTPCNEG,
+                std::string inFileTPCALL,
+                std::string whichDetTPCALL) {
+
+    gSystem->mkdir(Form("%s/%s/qvecCorrs/qvec_corrections.root", outDir.c_str(), runstr.data()), true);
+
+    DetectorMap detMap = {{
+        {"FT0C",   inFileFT0C,   whichDetFT0C},
+        {"FT0A",   inFileFT0A,   whichDetFT0A},
+        {"FT0M",   inFileFT0M,   whichDetFT0M},
+        {"FV0A",   inFileFV0A,   whichDetFV0A},
+        {"TPCPOS", inFileTPCPOS, whichDetTPCPOS},
+        {"TPCNEG", inFileTPCNEG, whichDetTPCNEG},
+        {"TPCALL", inFileTPCALL, whichDetTPCALL}
+    }};
+
+    TFile *fileCorrs = new TFile(Form("%s/%s/qvecCorrs/qvec_corrections.root", outDir.c_str(), runstr.data()), "recreate");
 
     std::array<int, 1> harmonics = {2}; // ,3,4};
     for (int vn : harmonics) {
         for(int i=0;i<nrun;i++){
-            makeHist(runnums[i], Form("qvec_fit_%d",runnums[i]), Form("qvec_tpc_%d",runnums[i]), sors[i], eors[i], vn);
+            makeHist(Form("%s/%s/qvecCorrs/", outDir.c_str(), runstr.data()), detMap, runnums[i], Form("qvec_fit_%d",runnums[i]), Form("qvec_tpc_%d",runnums[i]), sors[i], eors[i], vn, fileCorrs);
         }
     }
+
+    fileCorrs->Close();
 
 }

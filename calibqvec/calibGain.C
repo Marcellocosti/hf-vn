@@ -105,8 +105,8 @@ void calcRelGainFV0 (std::vector<double>& RelGain, std::vector<double>& mean, st
     }
 }
 
-void calibGainRun(int nCh, int runId, std::vector<double>& corr, int arunId, bool draw, std::string detName, std::string dataset) {
-    gSystem->mkdir(Form("/home/mdicosta/DMesonEsE/RedQCalib/LocalTest/%s/gainCor/%s/fig_gain_%d", dataset.data(), detName.data(), arunId), true);
+void calibGainRun(std::string outDir, std::string inFile, int nCh, int runId, std::vector<double>& corr, int arunId, bool draw, std::string detName, std::string dataset) {
+    gSystem->mkdir(Form("%s/%s/gainCor/%s/fig_gain_%d", outDir.data(), dataset.data(), detName.data(), arunId), true);
 
     gStyle->SetTitleFont(43,"X");
     gStyle->SetTitleFont(43,"Y");
@@ -128,13 +128,13 @@ void calibGainRun(int nCh, int runId, std::vector<double>& corr, int arunId, boo
     gPad->SetTicks();
     gPad->SetLogy();
 
-    TLegend* leg = new TLegend(0.5,0.6,0.9,0.9);
+    TLegend* leg = new TLegend(0.4,0.6,0.9,0.9);
     leg->SetTextFont(43);
     leg->SetTextSize(32);
     leg->SetLineWidth(0);
     leg->SetFillStyle(0);
     leg->SetNColumns(2);
-    TFile* fin = new TFile("/home/mdicosta/DMesonEsE/RedQCalib/LocalTest/AnalysisResultsTest.root","read");
+    TFile* fin = new TFile(inFile.data(), "read");
     if (!fin || fin->IsZombie()) {
         std::cout << "Cannot open file" << std::endl;
         return;
@@ -204,7 +204,7 @@ void calibGainRun(int nCh, int runId, std::vector<double>& corr, int arunId, boo
             leg->AddEntry(hAmpProj[indraw + j], Form("Ch Id: %d",indraw*ndraw + j), "l");
         }
         leg->Draw();
-        if (draw) c->SaveAs(Form("/home/mdicosta/DMesonEsE/RedQCalib/LocalTest/%s/gainCor/%s/fig_gain_%d/amp_%dId.pdf", dataset.data(), detName.data(), arunId, indraw));
+        if (draw) c->SaveAs(Form("%s/%s/gainCor/%s/fig_gain_%d/amp_%dId.pdf", outDir.data(), dataset.data(), detName.data(), arunId, indraw));
     }
 
     gPad->SetLogy(0);
@@ -227,7 +227,7 @@ void calibGainRun(int nCh, int runId, std::vector<double>& corr, int arunId, boo
     lB->Draw("same");
 
     // Config detector
-    if (draw) c->SaveAs(Form("/home/mdicosta/DMesonEsE/RedQCalib/LocalTest/%s/gainCor/%s/summary/raw_amps/amp_id_2D_%d.pdf", dataset.data(), detName.data(), arunId));
+    if (draw) c->SaveAs(Form("%s/%s/gainCor/%s/summary/raw_amps/amp_id_2D_%d.pdf", outDir.data(), dataset.data(), detName.data(), arunId));
 
     hFITScaled->GetXaxis()->SetRangeUser(0, 3000);
     if (detName == "FV0") {
@@ -237,7 +237,7 @@ void calibGainRun(int nCh, int runId, std::vector<double>& corr, int arunId, boo
     hFITScaled->Draw("colz");
     gMeanScaled->Draw("P");
 
-    if (draw) c->SaveAs(Form("/home/mdicosta/DMesonEsE/RedQCalib/LocalTest/%s/gainCor/%s/summary/scaled_amps/amp_id_2D_scaled_%d.pdf", dataset.data(), detName.data(), arunId));
+    if (draw) c->SaveAs(Form("%s/%s/gainCor/%s/summary/scaled_amps/amp_id_2D_scaled_%d.pdf", outDir.data(), dataset.data(), detName.data(), arunId));
 
     gPad->SetLogy();
     gPad->SetRightMargin(0.03);
@@ -259,7 +259,7 @@ void calibGainRun(int nCh, int runId, std::vector<double>& corr, int arunId, boo
         }
         leg->Draw();
         std::cout << "saving ... " << std::endl;
-        if (draw) c->SaveAs(Form("/home/mdicosta/DMesonEsE/RedQCalib/LocalTest/%s/gainCor/%s/fig_gain_%d/ScaledAmp_%dId.pdf", dataset.data(), detName.data(), arunId, i));
+        if (draw) c->SaveAs(Form("%s/%s/gainCor/%s/fig_gain_%d/ScaledAmp_%dId.pdf", outDir.data(), dataset.data(), detName.data(), arunId, i));
     }
 
     for (int i=0; i<nCh; i++) {
@@ -270,7 +270,7 @@ void calibGainRun(int nCh, int runId, std::vector<double>& corr, int arunId, boo
     delete c;
 }
 
-void calibGainDetector(int nCh, bool draw, std::string detName, std::string dataset) {
+void calibGainDetector(std::string outDir, std::string inFile, int nCh, bool draw, std::string detName, std::string dataset) {
 
     std::vector<double> corrConst;
 
@@ -295,7 +295,7 @@ void calibGainDetector(int nCh, bool draw, std::string detName, std::string data
     }
     for (int i=0; i<nrun; i++) {
         cout << "run: " << runnums[i] << endl;
-        calibGainRun(nCh, runnums[i], corrConst, runnums[i], draw, detName, dataset);
+        calibGainRun(outDir, inFile, nCh, runnums[i], corrConst, runnums[i], draw, detName, dataset);
         cout << "constructed" << endl;
         for (int j=0; j<nCh; j++) {
             gMeanVal[j]->SetPoint(i, runnums[i], corrConst.at(j));
@@ -322,7 +322,7 @@ void calibGainDetector(int nCh, bool draw, std::string detName, std::string data
         gPad->SetTopMargin(0.03);
         gPad->SetTicks();
 
-        TLegend* leg2 = new TLegend(0.6,0.6,0.9,0.9);
+        TLegend* leg2 = new TLegend(0.4,0.6,0.9,0.9);
         leg2->SetLineWidth(0.0);
         leg2->SetFillStyle(0);
         leg2->SetTextFont(43);
@@ -346,7 +346,7 @@ void calibGainDetector(int nCh, bool draw, std::string detName, std::string data
             leg2->AddEntry((TObject*)0, Form("channel ID: %d",i), "");
             leg2->AddEntry((TObject*)0, Form("STD from fit; %.3lf", var[i]), "");
             leg2->Draw();
-            c2->SaveAs(Form("/home/mdicosta/DMesonEsE/RedQCalib/LocalTest/%s/gainCor/%s/figs_rundep/gain_vs_runID_%dch.pdf", dataset.data(), detName.data(), i));
+            c2->SaveAs(Form("%s/%s/gainCor/%s/figs_rundep/gain_vs_runID_%dch.pdf", outDir.data(), dataset.data(), detName.data(), i));
         }
 
         TGraph* gvar = new TGraph();
@@ -356,11 +356,11 @@ void calibGainDetector(int nCh, bool draw, std::string detName, std::string data
         gvar->SetTitle(";Channel ID;Standard Deviation");
         gvar->SetMarkerStyle(20);
         gvar->Draw("AP");
-        c2->SaveAs(Form("/home/mdicosta/DMesonEsE/RedQCalib/LocalTest/%s/gainCor/%s/figs_rundep/gainvar.pdf", dataset.data(), detName.data()));
+        c2->SaveAs(Form("%s/%s/gainCor/%s/figs_rundep/gainvar.pdf", outDir.data(), dataset.data(), detName.data()));
     }
 }
 
-int calibGain() {
+int calibGain(std::string outDir, std::string inFile) {
 
     std::cout << "start" << std::endl;
     bool saveCCDB = false;
@@ -377,18 +377,18 @@ int calibGain() {
 
     std::cout << "Running gain calibration for FT0" << std::endl;
     const int nChFT0 = 208;
-    gSystem->mkdir(Form("/home/mdicosta/DMesonEsE/RedQCalib/LocalTest/%s/gainCor/FT0/summary/raw_amps", runstr.data()), true);
-    gSystem->mkdir(Form("/home/mdicosta/DMesonEsE/RedQCalib/LocalTest/%s/gainCor/FT0/summary/scaled_amps", runstr.data()), true);
-    gSystem->mkdir(Form("/home/mdicosta/DMesonEsE/RedQCalib/LocalTest/%s/gainCor/FT0/figs_rundep", runstr.data()), true);
-    calibGainDetector(nChFT0, draw, "FT0", runstr);
+    gSystem->mkdir(Form("%s/%s/gainCor/FT0/summary/raw_amps", outDir.data(), runstr.data()), true);
+    gSystem->mkdir(Form("%s/%s/gainCor/FT0/summary/scaled_amps", outDir.data(), runstr.data()), true);
+    gSystem->mkdir(Form("%s/%s/gainCor/FT0/figs_rundep", outDir.data(), runstr.data()), true);
+    calibGainDetector(outDir, inFile, nChFT0, draw, "FT0", runstr);
 
     std::cout << "Ended FT0 gain calibration\n\n\n" << std::endl;
     
     const int nChFV0 = 48;
-    gSystem->mkdir(Form("/home/mdicosta/DMesonEsE/RedQCalib/LocalTest/%s/gainCor/FV0/summary/raw_amps", runstr.data()), true);
-    gSystem->mkdir(Form("/home/mdicosta/DMesonEsE/RedQCalib/LocalTest/%s/gainCor/FV0/summary/scaled_amps", runstr.data()), true);
-    gSystem->mkdir(Form("/home/mdicosta/DMesonEsE/RedQCalib/LocalTest/%s/gainCor/FV0/figs_rundep", runstr.data()), true);
-    calibGainDetector(nChFV0, draw, "FV0", runstr);
+    gSystem->mkdir(Form("%s/%s/gainCor/FV0/summary/raw_amps", outDir.data(), runstr.data()), true);
+    gSystem->mkdir(Form("%s/%s/gainCor/FV0/summary/scaled_amps", outDir.data(), runstr.data()), true);
+    gSystem->mkdir(Form("%s/%s/gainCor/FV0/figs_rundep", outDir.data(), runstr.data()), true);
+    calibGainDetector(outDir, inFile, nChFV0, draw, "FV0", runstr);
     std::cout << "Ended FV0 gain calibration\n\n\n" << std::endl;
 
     return 0;
