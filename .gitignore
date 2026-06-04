@@ -16,6 +16,11 @@ test*
 *_dict.cxx
 *.d
 *tmp*
+*.h
+*.o
+*.out
+*.in
+*ACLIC*
 
 # jupyter notebook
 *.ipynb
