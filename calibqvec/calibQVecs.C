@@ -25,25 +25,6 @@ struct DetectorConfig {
 
 using DetectorMap = std::array<DetectorConfig, kNDetectors>;
 
-enum Detectors {
-  kFT0C = 0,
-  kFT0A,
-  kFT0M,
-  kFV0A,
-  kTPCPOS,
-  kTPCNEG,
-  kTPCALL,
-  kNDetectors
-};
-
-struct DetectorConfig {
-    std::string name;
-    std::string file;
-    std::string ref;
-};
-
-using DetectorMap = std::array<DetectorConfig, kNDetectors>;
-
 void Recenter(TH2* h, std::vector<double>& corr){
     corr.push_back(h->GetMean(1));
     corr.push_back(h->GetMean(2));
