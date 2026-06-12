@@ -175,49 +175,38 @@ class DhCorrelationExtraction : public TObject
   TH2D* GetMassVsPtHist2D() { return fMassVsPt_2D; }
   // final results, debug level 0
   TH1D* GetCorrectedCorrel() {
-    std::cout << "Returning corrected correlation histogram." << std::endl;
     return fCorrectedCorrel;
   }
   TH1D* GetNormalizedCorrectedCorrel() {
-    std::cout << "Returning normalized corrected correlation histogram." << std::endl;
     return fNormalizedCorrectedCorrel;
   }
   TH1D* GetCorrectedPairsMass() { 
-    std::cout << "Returning corrected pairs mass histogram." << std::endl;
     return fCorrectedPairsMass; 
   }
   TH1D* GetCorrectionRatio() {
-    std::cout << "Returning correction ratio histogram." << std::endl;
     return fCorrectionRatio;
   }
 
   // intermediate results, debug level 1
   TH2D* GetRawCorrel_SE_2D() {
-    std::cout << "Returning raw correlation histogram for SE." << std::endl;
     return fCorrel_SE_2D;
   }
   TH2D* GetRawCorrel_ME_2D() { 
-    std::cout << "Returning raw correlation histogram for ME." << std::endl;
     return fCorrel_ME_2D; 
   }
   TH2D* GetCorrectedCorrel_2D() { 
-    std::cout << "Returning corrected correlation histogram." << std::endl;
     return fCorrectedCorrel_2D; 
   }
   TH2D* GetNormalizedCorrel_ME_2D() { 
-    std::cout << "Returning normalized correlation histogram for ME." << std::endl;
     return fNormalizedCorrel_ME_2D; 
   }
   TH2D* GetOriginalCorrel_SE_2D() { 
-    std::cout << "Returning original correlation histogram for SE." << std::endl;
     return fOriginalCorrel_SE_2D; 
   }
   TH2D* GetOriginalCorrel_ME_2D() { 
-    std::cout << "Returning original correlation histogram for ME." << std::endl;
     return fOriginalCorrel_ME_2D; 
   }
   TH2D* GetOriginalMassVsDeltaEta_2D() { 
-    std::cout << "Returning original mass vs deltaEta histogram." << std::endl;
     return fOriginalMassVsDeltaEta_2D; 
   }
   /*TH1D* GetCorrel_PrimaryPart() { return fCorrel_PrimaryPart; }
@@ -227,43 +216,33 @@ class DhCorrelationExtraction : public TObject
 
   // original data histograms, debug level 2
   std::vector<TH2D*> GetPoolVec_OriginalCorrel_SE_2D() {
-    std::cout << "Returning pool vector of original correlation histograms for SE." << std::endl;
     return fPoolVec_OriginalCorrel_SE_2D;
   }
   std::vector<TH2D*> GetPoolVec_OriginalCorrel_ME_2D() { 
-    std::cout << "Returning pool vector of original correlation histograms for ME." << std::endl;
     return fPoolVec_OriginalCorrel_ME_2D;
   }
   std::vector<TH2D*> GetPoolVec_RawCorrel_SE_2D() { 
-    std::cout << "Returning pool vector of raw correlation histograms for SE." << std::endl;
     return fPoolVec_RawCorrel_SE_2D;
   }
   std::vector<TH2D*> GetPoolVec_RawCorrel_ME_2D() { 
-    std::cout << "Returning pool vector of raw correlation histograms for ME." << std::endl;
     return fPoolVec_RawCorrel_ME_2D;
   }
   std::vector<TH2D*> GetPoolVec_NormalizedCorrel_ME_2D() { 
-    std::cout << "Returning pool vector of normalized correlation histograms for ME." << std::endl;
     return fPoolVec_NormalizedCorrel_ME_2D;
   }
   std::vector<TH2D*> GetPoolVec_CorrectedCorrel_2D() { 
-    std::cout << "Returning pool vector of corrected correlation histograms." << std::endl;
     return fPoolVec_CorrectedCorrel_2D;
   }
   std::vector<TH2D*> GetPoolVec_OriginalMassVsDeltaEta_2D() { 
-    std::cout << "Returning pool vector of original mass vs deltaEta histograms." << std::endl;
     return fPoolVec_OriginalMassVsDeltaEta_2D;
   }
   std::vector<TH2D*> GetPoolVec_RawMassVsDeltaEta_2D() { 
-    std::cout << "Returning pool vector of raw mass vs deltaEta histograms." << std::endl;
     return fPoolVec_RawMassVsDeltaEta_2D;
   }
   std::vector<TH1D*> GetPoolVec_CorrectedMass() { 
-    std::cout << "Returning pool vector of corrected mass histograms." << std::endl;
     return fPoolVec_CorrectedMass;
   }
   std::vector<TH1D*> GetPoolVec_CorrectionRatio() { 
-    std::cout << "Returning pool vector of correction ratio histograms." << std::endl;
     return fPoolVec_CorrectionRatio;
   }
   /*TH1D* GetOriginalCorrel_PrimaryPart() { return fOriginalCorrel_PrimaryPart; }

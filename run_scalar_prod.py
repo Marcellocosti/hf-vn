@@ -27,13 +27,14 @@ def make_yaml(flow_config, outdir, correlated=False):
 	logger("YAML file will be created", level="INFO")
 	check_dir(f"{outdir}/cutsets")
 
-	method = "--correlated" if correlated else ""
+	method = "--sp_correlated" if correlated else "--sp_combined"
 	cmd = (
 		f'python3 {paths["YamlCuts"]} {flow_config} -o {outdir} {method}'
 	)
 
 	logger(f"{cmd}", level="COMMAND")
 	os.system(cmd)
+
 
 def project(flow_config, outdir, nworkers, mCutSets):
 	logger("Projections will be performed", level="INFO")
@@ -54,6 +55,7 @@ def project(flow_config, outdir, nworkers, mCutSets):
 	with concurrent.futures.ThreadPoolExecutor(max_workers=nworkers) as executor:
 		results_proj = list(executor.map(run_projections, range(mCutSets)))
 
+
 def efficiencies(flow_config, outdir, nworkers, mCutSets):
 	logger("Efficiencies will be computed", level="INFO")
 	check_dir(f"{outdir}/effs")
@@ -72,6 +74,7 @@ def efficiencies(flow_config, outdir, nworkers, mCutSets):
 
 	with concurrent.futures.ThreadPoolExecutor(max_workers=nworkers) as executor:
 		results_eff = list(executor.map(run_efficiency, range(mCutSets)))
+
 
 def get_vn(flow_config, outdir, nworkers, mCutSets, extraction_type):
 	logger("Fit v2 vs mass will be performed", level="INFO")
@@ -103,6 +106,7 @@ def get_vn(flow_config, outdir, nworkers, mCutSets, extraction_type):
 
 		merge_cutsets_fits(Path(f"{outdir}/raw_yields"))
 		produce_pt_bins_fit_summary(Path(f"{outdir}/raw_yields"), flow_config)
+
 
 def cut_variation(flow_config, outdir, correlated, combined=False, operations=None):
 	check_dir(f"{outdir}/cutVar")
@@ -162,6 +166,7 @@ def cut_variation(flow_config, outdir, correlated, combined=False, operations=No
 			logger(f"{cmd}", level="COMMAND")
 			os.system(cmd)
 
+
 def data_driven_fraction(outdir, combined=False):
 
 	if combined:
@@ -179,6 +184,7 @@ def data_driven_fraction(outdir, combined=False):
 	)
 	logger(f"{cmd}", level="COMMAND")
 	os.system(cmd)
+
  
 def get_v2_vs_frac(flow_config, outdir, correlated=False, batch=False):
 	logger("Fit v2 vs fd fraction will be performed", level="INFO")
@@ -194,6 +200,7 @@ def get_v2_vs_frac(flow_config, outdir, correlated=False, batch=False):
 		cmd += " --correlated"
 	logger(f"{cmd}", level="COMMAND")
 	os.system(cmd)
+
 
 def run_correlated_cut_variation(flow_config, operations, nworkers, outdir):
 
@@ -251,6 +258,7 @@ def run_correlated_cut_variation(flow_config, operations, nworkers, outdir):
 	else:
 		logger("Fit v2 vs fd fraction will not be performed", level="WARNING")
 
+
 def run_combined_cut_variation(flow_config, operations, nworkers, outdir):
 
 	#___________________________________________________________________________________________________________________________
@@ -306,6 +314,7 @@ def run_combined_cut_variation(flow_config, operations, nworkers, outdir):
 		get_v2_vs_frac(flow_config, outdir, correlated=False)
 	else:
 		logger("Fit v2 vs fd fraction will not be performed", level="WARNING")
+
 
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description='Arguments')

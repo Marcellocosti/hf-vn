@@ -203,7 +203,7 @@ def interface_raw_yield_fitter(config_path):
         strPtCand = f"PtCandBin_{int(ptMin*10)}_{int(ptMax*10)}"
 
         for iPtHad, (ptHadMin, ptHadMax) in enumerate(zip(ptBinsHad[:-1], ptBinsHad[1:])):
-            strPtHad = f"PtHadBin_{int(ptHadMin*10)}_{int(ptHadMax*10)}"
+            strPtHad = f"PtHad_{int(ptHadMin*10)}_{int(ptHadMax*10)}"
             hTemp = TH1D(
                 f"hPairsYields_vs_DeltaPhi_{iPtCand}_{iPtHad}", 
                 "Associated Pair Raw Yields vs #Delta#phi;#Delta#phi (rad); Associated pairs raw yield", 
@@ -256,7 +256,7 @@ def interface_raw_yield_fitter(config_path):
                 hPairsYields_vs_DeltaPhi[key_hPairs].SetBinError(bin_idx, result['ry_unc'])
                 pdfs[key_hPairs][result['iDeltaPhi']] = result['pdfPath']
                 pdfs_residuals[key_hPairs][result['iDeltaPhi']] = result['pdfPathResiduals']
-                bar.text = f"Completed task {result['taskID']}: PtCandBin_{result['iPtCand']}, PtHadBin_{result['iPtHad']}, DeltaPhiBin_{result['iDeltaPhi']}"
+                bar.text = f"Completed task {result['taskID']}: PtCandBin_{result['iPtCand']}, PtHad_{result['iPtHad']}, DeltaPhiBin_{result['iDeltaPhi']}"
                 del future
                 bar()
             futures.clear()
@@ -298,7 +298,7 @@ def interface_raw_yield_fitter(config_path):
     outROOT = TFile.Open(str(outFilePath / f"PairYieldsVsPhi.root"), "RECREATE")
     for (iPtCand, iPtHad), histo in hPairsYields_vs_DeltaPhi.items():
         subdir_pt = f"PtCandBin_{int(ptBinsCand[iPtCand]*10)}_{int(ptBinsCand[iPtCand+1]*10)}"
-        subdir_had = f"PtHadBin_{int(ptBinsHad[iPtHad]*10)}_{int(ptBinsHad[iPtHad+1]*10)}"
+        subdir_had = f"PtHad_{int(ptBinsHad[iPtHad]*10)}_{int(ptBinsHad[iPtHad+1]*10)}"
         outROOT.mkdir(subdir_pt + "/" + subdir_had)
         outROOT.cd(subdir_pt + "/" + subdir_had)
         # histo.Scale(1.0 / ry_trigger[(iPtCand, iPtHad)] if ry_trigger[(iPtCand, iPtHad)] != 0 else 1.0)

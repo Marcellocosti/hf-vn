@@ -237,7 +237,6 @@ Bool_t DhCorrelationExtraction::Init()
 
 Bool_t DhCorrelationExtraction::ExtractCorrelations()
 {
-  std::cout << "Entered ExtractCorrelations()" << std::endl;
   TH1::AddDirectory(kFALSE);
   if (Init() == kFALSE) { // todo: reload file every time
     return kFALSE;
@@ -246,7 +245,6 @@ Bool_t DhCorrelationExtraction::ExtractCorrelations()
   if (!fDoPoolByPool)
     fNpools = 1; // single histogram with integrated pools
 
-  std::cout << "Number of pools: " << fNpools << std::endl;
   fFactorsNormME.resize(fNpools, 1.0); // initialize normalization factors for ME histograms
 
   // Histograms definition
@@ -270,31 +268,26 @@ Bool_t DhCorrelationExtraction::ExtractCorrelations()
 
   for (int iPool = 0; iPool < fNpools; iPool++) {
     // Retrieve 2D plots for SE and ME, signal and bkg regions, for each pTbin and pool
-    std::cout << "Processing pool " << iPool << std::endl;
     hSE_2D_Raw[iPool] = ProjCorrelHisto(kSE, iPool);
     hME_2D_Raw[iPool] = ProjCorrelHisto(kME, iPool);
 
     hME_2D_Normalized[iPool] = reinterpret_cast<TH2D*>(hME_2D_Raw[iPool]->Clone(Form("hNormalizedCorrel_ME_2D_Pool%d", iPool)));
     // Normalize ME plots for the entries in (deltaEta, deltaPhi) = (0, 0)
     NormalizeMEplot(hME_2D_Normalized[iPool], hME_Sign_SoftPi[iPool], iPool);
-    std::cout << "Normalized ME histogram for pool " << iPool << std::endl;
 
     // Apply Event Mixing Correction
     hCorrectedCorrel_2D[iPool] = reinterpret_cast<TH2D*>(hSE_2D_Raw[iPool]->Clone(Form("hCorrectedCorrel_2D_Pool%d", iPool)));
     // hCorrectedCorrel_2D[iPool]->Sumw2();
     hCorrectedCorrel_2D[iPool]->Divide(hME_2D_Normalized[iPool]);
-    std::cout << "Applied ME correction for pool " << iPool << std::endl;
 
     // Apply the ME correction on the Mass by the ratio of SE/ME integrated over deltaPhi bins for each deltaEta bin
     if (fMethod == kDeltaPhiBinning) {
       hCorrectedPairsMass[iPool] = CorrectedPairsMassDistr(hSE_2D_Raw[iPool], hCorrectedCorrel_2D[iPool], iPool);
     }
-    std::cout << "Applied ME correction on the mass distribution for pool " << iPool << std::endl;
 
     // Set proper number of entries after ME correction
     hSE_2D_Raw[iPool]->SetEntries(hSE_2D_Raw[iPool]->Integral());
     hCorrectedCorrel_2D[iPool]->SetEntries(hCorrectedCorrel_2D[iPool]->Integral());
-    std::cout << "Set number of entries for SE and corrected correlation histograms for pool " << iPool << std::endl;
 
     // debug: normalized ME and corrected correlation histos pool by pool
     if (fDebug > 0 && fDoPoolByPool) {
@@ -303,11 +296,9 @@ Bool_t DhCorrelationExtraction::ExtractCorrelations()
         Form("Corrected %s-h correlation with %s", fDmesonLabel.Data(), fDeltaEtaGap.Data()), "#Delta#eta", "#Delta#phi (rad)", AxisLabels::kRawYieldRad
       ));
     }
-    std::cout << "Stored corrected correlation histogram for pool " << iPool << std::endl;
- 
+
     // Pools integration
     if (iPool == 0) {
-      std::cout << "Cloning histograms for pool " << iPool << " to initialize integrated histograms." << std::endl;
       h2D_SE = reinterpret_cast<TH2D*>(hSE_2D_Raw[0]->Clone("h2D_SE"));
       h2D_ME = reinterpret_cast<TH2D*>(hME_2D_Raw[0]->Clone("h2D_ME"));
       h2D_ME_norm = reinterpret_cast<TH2D*>(hME_2D_Normalized[0]->Clone("h2D_ME_norm"));
@@ -320,9 +311,7 @@ Bool_t DhCorrelationExtraction::ExtractCorrelations()
         h1D_CorrectedPairsMass = reinterpret_cast<TH1D*>(hCorrectedPairsMass[0]->Clone("h1D_CorrectedPairsMass"));
         h1D_correctedRatioVsDeltaEta = reinterpret_cast<TH1D*>(fPoolVec_CorrectionRatio[0]->Clone("h1D_correctedRatioVsDeltaEta"));
       }
-      std::cout << "Initialized integrated histograms with pool " << iPool << std::endl;
     } else {
-      std::cout << "Adding histograms for pool " << iPool << " to integrated histograms." << std::endl;
       h2D_SE->Add(hSE_2D_Raw[iPool]);
       h2D_ME->Add(hME_2D_Raw[iPool]);
       h2D_ME_norm->Add(hME_2D_Normalized[iPool]);
@@ -335,18 +324,15 @@ Bool_t DhCorrelationExtraction::ExtractCorrelations()
         h1D_CorrectedPairsMass->Add(hCorrectedPairsMass[iPool]);
         h1D_correctedRatioVsDeltaEta->Add(fPoolVec_CorrectionRatio[iPool]);
       }
-      std::cout << "Added histograms for pool " << iPool << " to integrated histograms." << std::endl;
     }
   } // end pool loop
 
-  std::cout << "Finished pool loop. Now setting styles for integrated histograms." << std::endl;
   if (fMethod == kDeltaPhiBinning) {
     fCorrectedPairsMass = SetTH1HistoStyle(reinterpret_cast<TH1D*>(h1D_CorrectedPairsMass->Clone("hCorrectedPairsMass")), 
       Form("Corrected pairs mass distribution with %s", fDeltaEtaGap.Data()), "Invariant Mass (GeV/c^{2})", "Corrected pairs / GeV/c^{2}");
     fCorrectionRatio = SetTH1HistoStyle(reinterpret_cast<TH1D*>(h1D_correctedRatioVsDeltaEta->Clone("hCorrectionRatio")),
       Form("Correction ratio with %s", fDeltaEtaGap.Data()), "#Delta#eta", "Ratio (corrected SE / SE)");
   }
-  std::cout << "Set styles for integrated histograms." << std::endl;
 
   // clean up pool histos
   for (int iPool = 0; iPool < fNpools; iPool++) {
@@ -357,7 +343,6 @@ Bool_t DhCorrelationExtraction::ExtractCorrelations()
     delete hCorrectedCorrel_2D[iPool];  hCorrectedCorrel_2D[iPool] = nullptr;
     delete hCorrectedPairsMass[iPool];       hCorrectedPairsMass[iPool] = nullptr;
   }
-  std::cout << "Cleaned up pool histograms." << std::endl;
 
   // debug: integrated SE, ME, normalized ME and corrected correlation histos
   if (fDebug > 0) {
@@ -366,7 +351,6 @@ Bool_t DhCorrelationExtraction::ExtractCorrelations()
     fCorrectedCorrel_2D = SetTH2HistoStyle(reinterpret_cast<TH2D*>(h2D_CorrectedCorrel->Clone("hCorrectedCorrel_2D")), Form("Corrected %s-h correlation with %s", fDmesonLabel.Data(), fDeltaEtaGap.Data()), "#Delta#eta", "#Delta#phi (rad)", AxisLabels::kRawYieldRad);
     fNormalizedCorrel_ME_2D = SetTH2HistoStyle(reinterpret_cast<TH2D*>(h2D_ME_norm->Clone("hNormalizedCorrel_ME_2D")), Form("Normalized ME %s-h correlation with %s", fDmesonLabel.Data(), fDeltaEtaGap.Data()), "#Delta#eta", "#Delta#phi (rad)", "ME correction ratio");
   }
-  std::cout << "Set styles for integrated histograms." << std::endl;
 
   // clean up integrated SE, ME and normalized ME histos
   delete h2D_SE;
@@ -379,7 +363,6 @@ Bool_t DhCorrelationExtraction::ExtractCorrelations()
   h1D_CorrectedPairsMass = nullptr;
   delete h1D_correctedRatioVsDeltaEta;
   h1D_correctedRatioVsDeltaEta = nullptr;
-  std::cout << "Cleaned up integrated SE, ME and normalized ME histograms." << std::endl;
 
   //==========================================================================================================================
   // 1D projection
@@ -394,7 +377,6 @@ Bool_t DhCorrelationExtraction::ExtractCorrelations()
     std::cout << "[WARNING] Mass vs pT histogram not found, skipping trigger normalization." << std::endl;
     ProjMassVsPt();
   }
-  std::cout << "Calculated trigger normalization factor." << std::endl;
   Double_t N_triggers = CalculateTriggerNormalizationFactor(fMassVsPt_2D, fPtCandBins[0], fPtCandBins[1], fInvMassBins[0], fInvMassBins[1]);
   h1D_NormalizedCorrectedCorrel->Scale(1. / N_triggers);
 
@@ -435,57 +417,46 @@ Bool_t DhCorrelationExtraction::ReadInputSEandME()
 TH2D* DhCorrelationExtraction::ProjCorrelHisto(Int_t SEorME, Int_t pool)
 {
   // TODO: Subtraction of softpion
-  std::cout << "Entered ProjCorrelHisto() with SEorME = " << (SEorME == kSE ? "SE" : "ME") << " and pool = " << pool << std::endl;
   TH2D* h2D = nullptr;
   TH2D* hFinal = nullptr;
   TH2D* hFinalMass = nullptr;
   TString poolStr = fDoPoolByPool ? Form("%d", pool) : "All";
 
-  std::cout << "Retrieving THnSparse for " << (SEorME == kSE ? "SE" : "ME") << " from directory " << (SEorME == kSE ? fDirSE->GetName() : fDirME->GetName()) << std::endl;
   // get the THnSparse from the corresponding directory
   THnSparseF* hSparse = 0x0;
   if (SEorME == kSE) { // Same Event
-    std::cout << "Looking for THnSparse named " << fCorrelSparseNameSE.Data() << " in SE directory." << std::endl;
     hSparse = reinterpret_cast<THnSparseF*>(fDirSE->Get(fCorrelSparseNameSE.Data()));
   } else { // Mixed Event
-    std::cout << "Looking for THnSparse named " << fCorrelSparseNameME.Data() << " in ME directory." << std::endl;
     hSparse = reinterpret_cast<THnSparseF*>(fDirME->Get(fCorrelSparseNameME.Data()));
   }
 
-  std::cout << "Retrieved THnSparse for " << (SEorME == kSE ? "SE" : "ME") << ". Now checking if it's valid." << std::endl;
   // Check pointer
   if (!hSparse) {
     std::cerr << "[ERROR] hSparse is null! Check that the object name exists in the directory and the file is open." << std::endl;
     throw std::runtime_error("hSparse is null");
   }
 
-  std::cout << "THnSparse retrieved successfully. Now setting axis ranges for pool selection and pT bins." << std::endl;
   // get bin range for pool selection
   Int_t binExtPoolMin;
   Int_t binExtPoolMax;
   if (fDoPoolByPool) {
-    std::cout << "Setting axis range for pool " << pool << " with pool by pool option enabled." << std::endl;
     binExtPoolMin = (Int_t)hSparse->GetAxis(kPool)->FindBin(pool + 0.01); // axis1: pool bin
     binExtPoolMax = (Int_t)hSparse->GetAxis(kPool)->FindBin(pool + 0.99);
   } else { // merge all pools in one
-    std::cout << "Merging all pools into one histogram." << std::endl;
     binExtPoolMin = 1;
     binExtPoolMax = (Int_t)hSparse->GetAxis(kPool)->GetNbins();
   }
 
-  std::cout << "Pool axis range set to bins [" << binExtPoolMin << ", " << binExtPoolMax << "]. Now adjusting deltaEta range if needed." << std::endl;
   // adjust deltaEta range if it's out of the histogram range
   if (fDeltaEtaLeftMin  < hSparse->GetAxis(kDeltaEta)->GetXmin()) fDeltaEtaLeftMin  = hSparse->GetAxis(kDeltaEta)->GetXmin();
   if (fDeltaEtaRightMax > hSparse->GetAxis(kDeltaEta)->GetXmax()) fDeltaEtaRightMax = hSparse->GetAxis(kDeltaEta)->GetXmax();
 
-  std::cout << "DeltaEta range adjusted if needed. Now checking if the specified pT bins are within the histogram range." << std::endl;
   // set ranges
   hSparse->GetAxis(kPool)->SetRangeUser(pool+0.01, fDoPoolByPool ? pool+0.99 : hSparse->GetAxis(kPool)->GetXmax()); // axis0: pool bin
   hSparse->GetAxis(kPtCand)->SetRangeUser(fPtCandBins[0], fPtCandBins[1]);    // axis1: ptCand
   hSparse->GetAxis(kPtHad)->SetRangeUser(fPtHadBins[0], fPtHadBins[1]);       // axis2: ptHad
 
 
-  std::cout << "pT axis ranges set to [" << fPtCandBins[0] << ", " << fPtCandBins[1] << "] for candidates and [" << fPtHadBins[0] << ", " << fPtHadBins[1] << "] for hadrons. Now projecting to 2D histogram." << std::endl;
   // debug: get original histogram before any operations
   if (fDebug > 0) {
     TH2D* h2D_Original = static_cast<TH2D*>(hSparse->Projection(kDeltaPhi, kDeltaEta));
@@ -548,15 +519,12 @@ TH2D* DhCorrelationExtraction::ProjCorrelHisto(Int_t SEorME, Int_t pool)
     }
   }
 
-  std::cout << "Projected original histograms for debugging. Now applying mass selection and deltaEta range selection." << std::endl;
   // mass selecton for kMassBinning method, but whole range will be applied for kDeltaPhiBinning method
   hSparse->GetAxis(kMass)->SetRangeUser(fInvMassBins[0]*1.001, fInvMassBins[1]*0.999); // axis5: invMass
 
-  std::cout << "Mass selection applied. Now applying deltaEta range selection." << std::endl;
   // set outer deltaEta range
   hSparse->GetAxis(kDeltaEta)->SetRangeUser(fDeltaEtaLeftMin+0.01, fDeltaEtaRightMax-0.01); // axis3: deltaEta
 
-  std::cout << "DeltaEta range selection applied. Now projecting to 2D histogram for correlation." << std::endl;
   // Project to 2D histogram for correlation, and 2D histogram for mass vs deltaEta if needed for kDeltaPhiBinning method
   hFinal = (TH2D*)hSparse->Projection(kDeltaPhi, kDeltaEta);            // axis4: deltaPhi, axis3: deltaEta Y X
 
@@ -565,7 +533,6 @@ TH2D* DhCorrelationExtraction::ProjCorrelHisto(Int_t SEorME, Int_t pool)
     hFinal->Rebin2D(fRebinAxisDeltaEta, fRebinAxisDeltaPhi); // X Y
   }
 
-  std::cout << "Rebinning applied if needed. Now applying normalization for ME histogram if SEorME is ME." << std::endl;
   if (SEorME == kME) CalculateNormaliztionFactorME(hFinal, pool);
   if(fMethod == kDeltaPhiBinning) {
     hSparse->GetAxis(kDeltaPhi)->SetRangeUser(fDeltaPhiBins[0], fDeltaPhiBins[1]); // axis4: deltaPhi
@@ -573,7 +540,6 @@ TH2D* DhCorrelationExtraction::ProjCorrelHisto(Int_t SEorME, Int_t pool)
   hFinalMass = (TH2D*)hSparse->Projection(kMass, kDeltaEta);            // axis5: invMass, axis3: deltaEta
   if (fMethod == kDeltaPhiBinning) hFinalMass->RebinY(fRebinAxisDeltaEta);
 
-  std::cout << "Normalization for ME applied if needed. Now applying deltaEta gap if specified." << std::endl;
   // set to 0 for the inner deltaEta gap
   if (fDeltaEtaLeftMax != 0 && fDeltaEtaRightMin != 0) {
     Int_t leftBinMax = hFinal->GetXaxis()->FindBin(fDeltaEtaLeftMax - 0.01);
@@ -595,14 +561,12 @@ TH2D* DhCorrelationExtraction::ProjCorrelHisto(Int_t SEorME, Int_t pool)
     }
   }
 
-  std::cout << "DeltaEta gap applied if specified. Now storing histograms for debugging if needed." << std::endl;
   if (fMethod == kDeltaPhiBinning) {
     TString titleMass = Form("Raw Mass vs DeltaEta with |#Delta#eta| > %.1f for Pool %s", fDeltaEtaRightMin, poolStr.Data());
     fPoolVec_RawMassVsDeltaEta_2D.push_back(SetTH2HistoStyle(reinterpret_cast<TH2D*>(hFinalMass->Clone(titleMass)),
       Form("hRaw_MassVsDeltaEta_SE_2D_Pool%s", poolStr.Data()), "#Delta#eta", "Mass (GeV/#it{c}^{2})", "Counts"));
   }
 
-  std::cout << "Stored mass vs deltaEta histogram for debugging if needed. Now storing correlation histogram for debugging if needed." << std::endl;
   if (fDebug > 1) {
     TString titleCorrel = Form("Raw %s-h correlation %s with |#Delta#eta| > %.1f for Pool %s", fDmesonLabel.Data(), SEorME ? "SE" : "ME", fDeltaEtaRightMin, poolStr.Data());
     if (SEorME == kSE) {
@@ -616,14 +580,12 @@ TH2D* DhCorrelationExtraction::ProjCorrelHisto(Int_t SEorME, Int_t pool)
 
   h2D = static_cast<TH2D*>(hFinal->Clone(Form("hCorrel_%s_2D_Pool%s", (SEorME == kSE) ? "SE" : "ME", fDoPoolByPool ? Form("%d", pool) : "All")));
 
-  std::cout << "Stored correlation histogram for debugging if needed. Now cleaning up temporary histograms." << std::endl;
   // clean up
   delete hFinal;
   hFinal = nullptr;
   delete hFinalMass;
   hFinalMass = nullptr;
 
-  std::cout << "Cleaned up temporary histograms. Now returning the correlation histogram." << std::endl;
   return h2D;
 }
 
@@ -794,15 +756,12 @@ TH2D* DhCorrelationExtraction::SetTH2HistoStyle(TH2D* histo, TString hTitle, TSt
 
 // load and project mass THnSparse to get mass vs pt histogram
 void DhCorrelationExtraction::ProjMassVsPt() {
-  std::cout << "Opening mass file: " << fFileNameMass.Data() << std::endl;
   TFile* fileMass = TFile::Open(fFileNameMass.Data());
-  std::cout << "Retrieving THnSparse: " << fMassSparseName.Data() << std::endl;
   if (!fileMass || fileMass->IsZombie()) {
     std::cerr << "[ERROR] Could not open file: " << fFileNameMass.Data() << std::endl;
     return;
   }
 
-  std::cout << "Projecting mass vs pt histogram from THnSparse..." << std::endl;
   THnSparseF* sparseMass = reinterpret_cast<THnSparseF*>(fileMass->Get(fMassSparseName.Data()));
   TH2D* hMassVsPt = reinterpret_cast<TH2D*>(sparseMass->Projection(1,0));
   hMassVsPt -> SetDirectory(0);
@@ -810,7 +769,6 @@ void DhCorrelationExtraction::ProjMassVsPt() {
   fMassVsPt_2D = hMassVsPt;
 
   fileMass -> Close();
-  std::cout << "Mass vs pt histogram projected and stored." << std::endl;
   delete sparseMass;
 }
 
