@@ -119,12 +119,13 @@ def process_sparse(i_file, infile_path, full_cfg, sparse_cfg, prep_out_dir, inpu
 
     pt_mins, pt_maxs = full_cfg['ptbins'][:-1], full_cfg['ptbins'][1:]
     bkg_maxs = full_cfg['preprocess']['bkg_cuts']
+    mass_ranges = full_cfg['preprocess'].get('mass_ranges', None)
     axes_to_keep, rebin = sparse_cfg["axes"]['names'], sparse_cfg["axes"]['rebin']
     sparse_type, sparse_path = sparse_cfg['name'], sparse_cfg['path']
     sparse_dir, sparse_name = sparse_path.split('/')[0], sparse_path.split('/')[1]
 
     logger(f"Projecting sparse {sparse_cfg['name']} for file {i_file} into pT bins ({pt_mins} - {pt_maxs}) with bkg cuts {bkg_maxs}", level='INFO')
-    for pt_min, pt_max, bkg_max in zip(pt_mins, pt_maxs, bkg_maxs):
+    for i_pt, (pt_min, pt_max, bkg_max) in enumerate(zip(pt_mins, pt_maxs, bkg_maxs)):
         logger(f"Processing pT bin {pt_min} - {pt_max} with bkg max {bkg_max}", level='INFO')
         # Create output file
         out_file_dir = f"{prep_out_dir}/preprocess/pt_{int(pt_min*10)}_{int(pt_max*10)}/{input_out_dir}"
@@ -135,6 +136,9 @@ def process_sparse(i_file, infile_path, full_cfg, sparse_cfg, prep_out_dir, inpu
         sparse.GetAxis(axes.get('PtTrig', axes.get('Pt'))).SetRangeUser(pt_min, pt_max) # PtTrig for correlations, Pt for SP flow
         if axes.get('ScoreBkg') is not None: # Skip sparses for generated info
             sparse.GetAxis(axes['ScoreBkg']).SetRangeUser(0, bkg_max)
+        if mass_ranges is not None:
+            mass_min, mass_max = mass_ranges[i_pt]
+            sparse.GetAxis(axes['Mass']).SetRangeUser(mass_min, mass_max)
         proj_axes = [axes[ax_to_keep] for ax_to_keep in axes_to_keep]
         proj_sparse = sparse.Projection(len(proj_axes), array.array('i', proj_axes), 'O')
         proj_sparse.SetName(sparse.GetName())
