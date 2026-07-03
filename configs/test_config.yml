@@ -277,12 +277,17 @@ working_point:
     scan:
         ScoreBkg:
             min:    0.0
-            max:    [0.015, 0.020, 0.020]
-            nsteps: 5
+            max:    [0.01, 0.01, 0.01, 0.02, 0.03, 0.05, 0.05, 0.07, 0.07, 0.1, 0.1, 0.3, 0.3, 0.5, 0.5]
+            nsteps: 10
         ScoreFD:
-            min:    [0.60, 0.60, 0.60]
-            max:    [0.950, 0.950, 0.950]
-            nsteps: 5
+            # Strategy: 'sequential' scans lower thresholds, cut keeps [x, 1.0]
+            # Strategy: 'slices' fits each window [edges[i], edges[i+1]] independently
+            strategy: 'slices'
+            edges: [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+            # ScoreFD min/max define the range of minimum thresholds scanned, not a cut window
+            min:    [0.1, 0.2, 0.2]
+            max:    [0.9, 0.5, 0.5]
+            nsteps: 10
     
     #_________________________________________________________________________________________________________________________
     # Optional fit configurations, if not set, the default values will be used. If single value is provided, it will be used for all pt bins.
