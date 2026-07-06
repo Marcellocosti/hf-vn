@@ -1,7 +1,7 @@
 '''
 Scan ScoreBkg (0 to max) and ScoreFD (sequential or slices) and map the 
 invariant-mass significance per pT bin, using a subset of preprocessed job sparses.
-python3 optimize_working_point.py config.yml [-w N]
+python3 optimize_working_point.py config.yml [-w N] [-d]
 '''
 
 import os
@@ -12,6 +12,7 @@ import argparse
 import yaml
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
 
 import ROOT
 from ROOT import TFile, TH2D
@@ -107,7 +108,7 @@ def get_mean_sigma(fitter):
 
 # Scans the grid, fits the mass at each point, saves the plots (2D significance map, QA hists)
 def process_pt_bin(args):
-    cfg, i_pt, pt_min, pt_max, minimizer = args
+    cfg, i_pt, pt_min, pt_max, minimizer, debug = args
 
     wp_cfg = cfg['working_point']
     fit_cfg = cfg['v2extraction']
@@ -174,6 +175,12 @@ def process_pt_bin(args):
     fitter = RawYieldFitter(dmeson, pt_min, pt_max, pt_str, minimizer, verbose=False)
     fitter.set_fit_range(mass_min, mass_max)
 
+    scan_log_path = f"{out_dir_pt}/scan_log_{pt_str}.txt"
+    scan_log = open(scan_log_path, "w")
+    scan_log.write("tag signif mean sigma chi2_ndf converged\n")
+
+    debug_pdf = PdfPages(f"{out_dir_pt}/debug_fits_{pt_str}.pdf") if debug else None
+
     # Scans all (ScoreBkg max, ScoreFD min or slice) combinations
     for i_x, x_max in enumerate(scan_x):
         for i_y, y_scan_val in enumerate(scan_y):
@@ -193,15 +200,16 @@ def process_pt_bin(args):
             fitter.setup()
 
             try:
-                fitter.fit()
+                fit_status, fit_converged = fitter.fit()
                 info, *_ = fitter.get_fit_info()
                 signif = info[sgn_label]['signif']
                 mean, sigma = get_mean_sigma(fitter)
                 chi2 = info.get('chi2_over_ndf', np.nan)
-                chi2 = chi2 if chi2 > 0 else np.nan
+                chi2 = chi2 if (np.isfinite(chi2) and chi2 > 0) else np.nan
             except Exception as e:
                 logger(f"    Fit failed for {tag}: {e}", "WARNING")
                 signif, mean, sigma, chi2 = -1.0, np.nan, np.nan, np.nan
+                fit_converged = False
 
             # Fills QA hists and the 2D plot grid
             h_signif.SetBinContent(i_x + 1, i_y + 1, signif if signif > 0 else 0.0)
@@ -213,7 +221,26 @@ def process_pt_bin(args):
             if np.isfinite(chi2):
                 h_chi2.SetBinContent(i_x + 1, i_y + 1, chi2)
             logger(f"    [{pt_str}] {tag}: signif={signif:.2f} mean={mean:.4f} sigma={sigma:.4f} chi2={chi2:.2f}", "INFO")
+            scan_log.write(f"{tag} {signif:.3f} {mean:.5f} {sigma:.5f} {chi2:.3f} {fit_converged}\n")
+
+            # In debug mode, plot fits that converged, but have a bad/undefined chi2/ndf
+            bad_chi2 = (not np.isfinite(chi2)) or chi2 > 3.0
+            if debug_pdf is not None and fit_converged and bad_chi2:
+                try:
+                    fig_fit = fitter.plot_fit(logy=False, show_extra_info=True, path=f"{out_dir_pt}/_fitplot.pdf")
+                    fig_fit.suptitle(f"{tag} (chi2/ndf={chi2:.2f})", fontsize=8)
+                    debug_pdf.savefig(fig_fit)
+                    plt.close(fig_fit)
+                except Exception as e:
+                    logger(f"    Could not plot fit for {tag}: {e}", "WARNING")
+
             fitter.reset()
+
+    scan_log.close()
+    logger(f"Wrote scan log -> {scan_log_path}", "INFO")
+    if debug_pdf is not None:
+        debug_pdf.close()
+        logger(f"Wrote debug fit plots -> {out_dir_pt}/debug_fits_{pt_str}.pdf", "INFO")
 
     # Generates significance 2D plot PDF
     fig, ax = plt.subplots(figsize=(1.6 * nx + 2, 1.2 * ny + 2))
@@ -247,7 +274,7 @@ def process_pt_bin(args):
     return out_path
 
 # Runs one task per pT bin, in parallel if -w > 1
-def optimize_working_point(cfg_file, minimizer, workers):
+def optimize_working_point(cfg_file, minimizer, workers, debug=False):
     with open(cfg_file, 'r') as f:
         cfg = yaml.safe_load(f)
 
@@ -255,7 +282,7 @@ def optimize_working_point(cfg_file, minimizer, workers):
     os.makedirs(out_base, exist_ok=True)
 
     pt_mins, pt_maxs = cfg['ptbins'][:-1], cfg['ptbins'][1:]
-    tasks = [(cfg, i, pt_min, pt_max, minimizer) for i, (pt_min, pt_max) in enumerate(zip(pt_mins, pt_maxs))]
+    tasks = [(cfg, i, pt_min, pt_max, minimizer, debug) for i, (pt_min, pt_max) in enumerate(zip(pt_mins, pt_maxs))]
 
     results = []
     if workers > 1:
@@ -275,9 +302,10 @@ def optimize_working_point(cfg_file, minimizer, workers):
     logger(f"Done. Wrote {len(results)} per-bin QA file(s) under {out_base}", "INFO")
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Scan ML-score working points and map significance")
-    parser.add_argument("config_file", help="Path to the YAML configuration file")
+    parser = argparse.ArgumentParser(description="scan BDT scores and map significance")
+    parser.add_argument("config_file", help="path to the yml configuration file")
     parser.add_argument("-m", "--minimizer", default="flarefly", help="flarefly or roofit")
     parser.add_argument("-w", "--workers", type=int, default=1, help="parallel pt-bin workers")
+    parser.add_argument("-d", "--debug", action="store_true", help="save PDFs of fits with bad chi2/ndf")
     args = parser.parse_args()
-    optimize_working_point(args.config_file, args.minimizer, args.workers)
+    optimize_working_point(args.config_file, args.minimizer, args.workers, args.debug)
