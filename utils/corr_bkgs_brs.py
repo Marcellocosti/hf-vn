@@ -1,4 +1,29 @@
 final_states = {
+    "DzeroToPiK": {
+      "flag_mc_rec": 1,
+      "br_sim_pbpb": 2.0e-1,
+      "br_pdg": 3.936e-2
+    },
+    "DzeroToPiKPi0": {
+      "flag_mc_rec": 2,
+      "br_sim_pbpb": 2.0e-1,
+      "br_pdg": 1.44e-1
+    },
+    "DzeroToPiPi": {
+      "flag_mc_rec": 3,
+      "br_sim_pbpb": 2.0e-1,
+      "br_pdg": 1.451e-3
+    },
+    "DzeroToPiPiPi0": {
+      "flag_mc_rec": 4,
+      "br_sim_pbpb": 2.0e-1,
+      "br_pdg": 1.49e-2
+    },
+    "DzeroToKK": {
+      "flag_mc_rec": 5,
+      "br_sim_pbpb": 2.0e-1,
+      "br_pdg": 4.07e-3
+    },
     "DplusToPiKPi": {
       "flag_mc_rec": 1,
       "br_sim_ppref": 5.00e-1,
