@@ -29,6 +29,8 @@
 #include <Rtypes.h>
 #include <RtypesCore.h>
 #include <vector>
+#include <string>
+#include <iostream>
 
 namespace AxisLabels {
     constexpr const char* kRawYield = "#frac{d^{2}N}{d#Delta#eta d#Delta#phi}";
@@ -172,35 +174,77 @@ class DhCorrelationExtraction : public TObject
   /// Getters for the results
   TH2D* GetMassVsPtHist2D() { return fMassVsPt_2D; }
   // final results, debug level 0
-  TH1D* GetCorrectedCorrel() { return fCorrectedCorrel; }
-  TH1D* GetNormalizedCorrectedCorrel() { return fNormalizedCorrectedCorrel; }
-  TH1D* GetCorrectedPairsMass() { return fCorrectedPairsMass; }
-  TH1D* GetCorrectionRatio() { return fCorrectionRatio; }
+  TH1D* GetCorrectedCorrel() {
+    return fCorrectedCorrel;
+  }
+  TH1D* GetNormalizedCorrectedCorrel() {
+    return fNormalizedCorrectedCorrel;
+  }
+  TH1D* GetCorrectedPairsMass() { 
+    return fCorrectedPairsMass; 
+  }
+  TH1D* GetCorrectionRatio() {
+    return fCorrectionRatio;
+  }
 
   // intermediate results, debug level 1
-  TH2D* GetRawCorrel_SE_2D() { return fCorrel_SE_2D; }
-  TH2D* GetRawCorrel_ME_2D() { return fCorrel_ME_2D; }
-  TH2D* GetCorrectedCorrel_2D() { return fCorrectedCorrel_2D; }
-  TH2D* GetNormalizedCorrel_ME_2D() { return fNormalizedCorrel_ME_2D; }
-  TH2D* GetOriginalCorrel_SE_2D() { return fOriginalCorrel_SE_2D; }
-  TH2D* GetOriginalCorrel_ME_2D() { return fOriginalCorrel_ME_2D; }
-  TH2D* GetOriginalMassVsDeltaEta_2D() { return fOriginalMassVsDeltaEta_2D; }
+  TH2D* GetRawCorrel_SE_2D() {
+    return fCorrel_SE_2D;
+  }
+  TH2D* GetRawCorrel_ME_2D() { 
+    return fCorrel_ME_2D; 
+  }
+  TH2D* GetCorrectedCorrel_2D() { 
+    return fCorrectedCorrel_2D; 
+  }
+  TH2D* GetNormalizedCorrel_ME_2D() { 
+    return fNormalizedCorrel_ME_2D; 
+  }
+  TH2D* GetOriginalCorrel_SE_2D() { 
+    return fOriginalCorrel_SE_2D; 
+  }
+  TH2D* GetOriginalCorrel_ME_2D() { 
+    return fOriginalCorrel_ME_2D; 
+  }
+  TH2D* GetOriginalMassVsDeltaEta_2D() { 
+    return fOriginalMassVsDeltaEta_2D; 
+  }
   /*TH1D* GetCorrel_PrimaryPart() { return fCorrel_PrimaryPart; }
   TH1D* GetCorrel_AllPart() { return fCorrel_AllPart; }
   TH1D* GetFracSecondaryPart() { return fFracSecondaryPart; }
   TH1D* GetCorrectedCorrHisto_Before_SecPart() { return fCorrectedCorrHisto_Before_SecPart; }*/
 
   // original data histograms, debug level 2
-  std::vector<TH2D*> GetPoolVec_OriginalCorrel_SE_2D() { return fPoolVec_OriginalCorrel_SE_2D; }
-  std::vector<TH2D*> GetPoolVec_OriginalCorrel_ME_2D() { return fPoolVec_OriginalCorrel_ME_2D; }
-  std::vector<TH2D*> GetPoolVec_RawCorrel_SE_2D() { return fPoolVec_RawCorrel_SE_2D; }
-  std::vector<TH2D*> GetPoolVec_RawCorrel_ME_2D() { return fPoolVec_RawCorrel_ME_2D; }
-  std::vector<TH2D*> GetPoolVec_NormalizedCorrel_ME_2D() { return fPoolVec_NormalizedCorrel_ME_2D; }
-  std::vector<TH2D*> GetPoolVec_CorrectedCorrel_2D() { return fPoolVec_CorrectedCorrel_2D; }
-  std::vector<TH2D*> GetPoolVec_OriginalMassVsDeltaEta_2D() { return fPoolVec_OriginalMassVsDeltaEta_2D; }
-  std::vector<TH2D*> GetPoolVec_RawMassVsDeltaEta_2D() {return fPoolVec_RawMassVsDeltaEta_2D; }
-  std::vector<TH1D*> GetPoolVec_CorrectedMass() { return fPoolVec_CorrectedMass; }
-  std::vector<TH1D*> GetPoolVec_CorrectionRatio() { return fPoolVec_CorrectionRatio; }
+  std::vector<TH2D*> GetPoolVec_OriginalCorrel_SE_2D() {
+    return fPoolVec_OriginalCorrel_SE_2D;
+  }
+  std::vector<TH2D*> GetPoolVec_OriginalCorrel_ME_2D() { 
+    return fPoolVec_OriginalCorrel_ME_2D;
+  }
+  std::vector<TH2D*> GetPoolVec_RawCorrel_SE_2D() { 
+    return fPoolVec_RawCorrel_SE_2D;
+  }
+  std::vector<TH2D*> GetPoolVec_RawCorrel_ME_2D() { 
+    return fPoolVec_RawCorrel_ME_2D;
+  }
+  std::vector<TH2D*> GetPoolVec_NormalizedCorrel_ME_2D() { 
+    return fPoolVec_NormalizedCorrel_ME_2D;
+  }
+  std::vector<TH2D*> GetPoolVec_CorrectedCorrel_2D() { 
+    return fPoolVec_CorrectedCorrel_2D;
+  }
+  std::vector<TH2D*> GetPoolVec_OriginalMassVsDeltaEta_2D() { 
+    return fPoolVec_OriginalMassVsDeltaEta_2D;
+  }
+  std::vector<TH2D*> GetPoolVec_RawMassVsDeltaEta_2D() { 
+    return fPoolVec_RawMassVsDeltaEta_2D;
+  }
+  std::vector<TH1D*> GetPoolVec_CorrectedMass() { 
+    return fPoolVec_CorrectedMass;
+  }
+  std::vector<TH1D*> GetPoolVec_CorrectionRatio() { 
+    return fPoolVec_CorrectionRatio;
+  }
   /*TH1D* GetOriginalCorrel_PrimaryPart() { return fOriginalCorrel_PrimaryPart; }
   TH1D* GetOriginalCorrel_AllPart() { return fOriginalCorrel_AllPart; }*/
 
