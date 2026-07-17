@@ -222,7 +222,7 @@ def get_vn_vs_mass(fitConfigFileName, cutsetFileName, inFileName, batch, isMulti
     infile = TFile.Open(inFileName)
     if not infile or not infile.IsOpen():
         logger(f'File "{inFileName}" cannot be opened. Exit.', level='ERROR')
-    
+
     hRefl, hMass, hMassForFit, hVn, hVnForFit, fTotFuncMass,\
     fTotFuncVn, fSgnFuncMass, fBkgFuncMass, fMassBkgRflFunc,\
     fMassSecPeakFunc, fBkgFuncVn, fVnSecPeakFunc, fVnCompFuncts,\
