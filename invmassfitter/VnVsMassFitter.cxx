@@ -26,6 +26,7 @@ ClassImp(VnVsMassFitter);
 VnVsMassFitter::VnVsMassFitter()
   :TObject()
   ,fName("")
+  ,fParticle("")
   ,fMassHisto(0x0)
   ,fVnVsMassHisto(0x0)
   ,fPrefitParsHisto(0x0)
@@ -131,9 +132,10 @@ VnVsMassFitter::VnVsMassFitter()
 }
 
 //________________________________________________________________
-VnVsMassFitter::VnVsMassFitter(std::string name, TH1F* hMass, TH1F* hvn, Double_t min, Double_t max, Int_t funcMassBkg, Int_t funcMassSgn, Int_t funcVnBkg, Bool_t suppressOutput)
+VnVsMassFitter::VnVsMassFitter(std::string name, std::string particle, TH1F* hMass, TH1F* hvn, Double_t min, Double_t max, Int_t funcMassBkg, Int_t funcMassSgn, Int_t funcVnBkg, Bool_t suppressOutput)
   :TObject()
   ,fName(name)
+  ,fParticle(particle)
   ,fPrefitParsHisto(0x0)
   ,fSignalParsHisto(0x0)
   ,fSimFitParsHisto(0x0)
@@ -372,6 +374,7 @@ Int_t VnVsMassFitter::PrefitMass(){
   // If second peak is present, quantify bin counting between fMassRangeMinSecPeak
   // and fMassRangeMaxSecPeak and, if too low, remove it
   if (fSecondPeak) {
+    std::cout << "Checking if second peak has enough counts in the specified region [" << fMassRangeMinSecPeak << ", " << fMassRangeMaxSecPeak << "]" << std::endl;
     for (Int_t iPar = 0; iPar < fNParsMassBkg; iPar++) {
       if (!fSuppressOutput) {
         std::cout << "Setting prefit parameter " << iPar << " from " << fMassBkgFunc->GetParameter(iPar) << " to " << fMassTotFunc->GetParameter(iPar) << std::endl;
@@ -384,6 +387,8 @@ Int_t VnVsMassFitter::PrefitMass(){
     // Subtract the background counts in the same region
     Double_t bkgCountsInSecPeakRegion = fMassBkgFunc->Integral(fMassRangeMinSecPeak, fMassRangeMaxSecPeak) / fMassHisto->GetBinWidth(1);
     Double_t netCounts = countsInSecPeakRegion - bkgCountsInSecPeakRegion;
+    std::cout << "Counts in second peak region: " << countsInSecPeakRegion << ", background counts: " << bkgCountsInSecPeakRegion
+              << ", net counts: " << netCounts << std::endl;
     if (!fSuppressOutput) {
       std::cout << "Counts in second peak region: " << countsInSecPeakRegion << ", background counts: " << bkgCountsInSecPeakRegion
                 << ", net counts: " << netCounts << std::endl;
@@ -576,7 +581,7 @@ Int_t VnVsMassFitter::SimultaneousFit() {
     if(fFixSecMass) {fitter.Config().ParSettings(fNParsMassBkg+fNParsMassSgn+1).Fix();}
     if(fFixSecWidth) {fitter.Config().ParSettings(fNParsMassBkg+fNParsMassSgn+2).Fix();}
     fitter.Config().ParSettings(fNParsMassBkg+fNParsMassSgn).SetLimits(0, 1000000);
-    fitter.Config().ParSettings(fNParsMassBkg+fNParsMassSgn+1).SetLimits(1.99, 2.04);
+    fitter.Config().ParSettings(fNParsMassBkg+fNParsMassSgn+1).SetLimits(fMassRangeMinSecPeak, fMassRangeMaxSecPeak); // D* peak
   }
   if(fReflections) {
     if(fFixRflOverSig) fitter.Config().ParSettings(fNParsMassBkg+fNParsMassSgn+fNParsSec).Fix();
@@ -1364,7 +1369,10 @@ void VnVsMassFitter::SetParInitValsAndNames() {
   Double_t slopeEst = (fMassHisto->GetBinContent(fMassHisto->GetNbinsX()) - fMassHisto->GetBinContent(1)) / (fMassMax - fMassMin);
 
   fInitFuncPars["SgnNorm"] = {integral/10, 0, integral};
-  fInitFuncPars["Mean"] = {1.869, 1.8, 2.0};
+  if (fParticle == "D0") fInitFuncPars["Mean"] = {1.865, 1.8, 1.9};
+  else if (fParticle == "Dplus") fInitFuncPars["Mean"] = {1.869, 1.8, 1.9};
+  else if (fParticle == "Ds") fInitFuncPars["Mean"] = {1.968, 1.9, 2.0};
+  else if (fParticle == "Lc") fInitFuncPars["Mean"] = {2.286, 2.2, 2.4};
 
   switch(fMassSgnFuncType) {
     case 0: //single gaus
@@ -1496,7 +1504,6 @@ void VnVsMassFitter::InitFunctionPars(std::string func) {
           fMassSgnFunc->SetParName(iPar, name.c_str());
           fMassSgnFunc->SetParameter(iPar, par.value);
           fMassSgnFunc->SetParLimits(iPar, par.low, par.high);
-          // std::cout << "---> Setting Mass Signal param: " << name << " to " << par.value << " [" << par.low << ", " << par.high << "]" << std::endl;
         }
       }
     }
@@ -1508,7 +1515,6 @@ void VnVsMassFitter::InitFunctionPars(std::string func) {
           fMassSecPeakFunc->SetParName(iPar, name.c_str());
           fMassSecPeakFunc->SetParameter(iPar, par.value);
           fMassSecPeakFunc->SetParLimits(iPar, par.low, par.high);
-          // std::cout << "---> Setting Mass Secondary Peak param: " << name << " to " << par.value << " [" << par.low << ", " << par.high << "]" << std::endl;
         }
       }
     }
