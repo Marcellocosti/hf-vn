@@ -1654,7 +1654,10 @@ void VnVsMassFitter::DefineNumberOfParameters() {
 
   switch(fMassBkgFuncType) {
     case 0: //expo
-      fNParsMassBkg=2;
+      fN
+if not args.b:
+    input("Press enter to exit")
+ParsMassBkg=2;
       break;
     case 1: //lin
       fNParsMassBkg=2;

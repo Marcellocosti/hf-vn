@@ -18,7 +18,7 @@ from alive_progress import alive_bar
 from scipy.interpolate import make_interp_spline
 sys.path.append(f"{os.path.dirname(os.path.abspath(__file__))}/../utils")
 from data_model import get_pt_preprocessed_sparses
-from utils import reweight_histo_1D, reweight_histo_2D, reweight_histo_3D, get_vn_versus_mass, profile_mass_sp, make_dir_root_file, logger, get_centrality_bins
+from utils import reweight_histo_1D, reweight_histo_2D, reweight_histo_3D, get_vn_versus_mass, profile_mass_sp, make_dir_root_file, logger, get_centrality_bins, get_ese_band_label
 
 ROOT.TH1.AddDirectory(False)
 
@@ -97,8 +97,10 @@ def proj_multitrial(config, multitrial_folder, workers, resolution):
 
 def proj_data(i_bin, sparse, axes, resolution, proj_cfg, writeopt):
 
-    proj_vars = proj_cfg.get('ProjVars', [])
-    proj_vars += ['Mass', 'Sp']
+    proj_vars = list(proj_cfg.get('ProjVars', []))
+    for var in ('Mass', 'Sp'):
+        if var not in proj_vars:
+            proj_vars.append(var)
     proj_axes = [axes['FlowSP'][var] for var in proj_vars]
 
     for var, ax in zip(proj_vars, proj_axes):
@@ -287,15 +289,36 @@ if __name__ == "__main__":
         _, (centLowLim, centMaxLim) = get_centrality_bins(config['centrality'])
 
     if operations.get("proj_data") or args.multitrial_folder != "":
-        reso_file = TFile.Open(config["projections"]["Resolution"], 'r')
-        det_A = config["projections"].get('detA', 'FT0c')
-        det_B = config["projections"].get('detB', 'FV0a')
-        det_C = config["projections"].get('detC', 'TPCtot')
-        logger(f"Getting resolution histogram from file {config['projections']['Resolution']} for triplet {det_A}_{det_B}_{det_C}",  "WARNING")
-        reso_hist = reso_file.Get(f'{det_A}_{det_B}_{det_C}/histo_reso_delta_cent')
-        resolution = reso_hist.GetBinContent(1)
-        reso_hist.SetDirectory(0)
-        reso_file.Close()
+
+        # Resolution was computed online on hyperloop
+        if config["projections"].get("Resolution") is None:
+            logger("No resolution histogram provided in the config file, will not correct for resolution!", level='WARNING')
+            resolution = None
+        else:
+            reso_file = TFile.Open(config["projections"]["Resolution"], 'r')
+            det_A = config["projections"].get('detA', 'FT0c')
+            det_B = config["projections"].get('detB', 'FV0a')
+            det_C = config["projections"].get('detC', 'TPCtot')
+            logger(f"Getting resolution histogram from file {config['projections']['Resolution']} for triplet {det_A}_{det_B}_{det_C}",  "WARNING")
+            ese_band = (config.get('ese') or {}).get('band')
+            ese_sel = (get_ese_band_label(ese_band[0], ese_band[1])
+                    if ese_band and ese_band != 'Inclusive' else 'Inclusive')
+            reso_paths = [f'{ese_sel}/{det_A}_{det_B}_{det_C}/histo_reso_delta_cent']
+            if ese_sel == 'Inclusive':  # legacy reso files without ESE directories
+                reso_paths.append(f'{det_A}_{det_B}_{det_C}/histo_reso_delta_cent')
+            reso_hist = None
+            for reso_path in reso_paths:
+                reso_hist = reso_file.Get(reso_path)
+                if reso_hist:
+                    logger(f"Found resolution histogram at {reso_path}", "INFO")
+                    break
+            if not reso_hist:
+                logger(f"Resolution histogram not found in {config['projections']['Resolution']}. "
+                    f"Tried: {', '.join(reso_paths)}", "ERROR")
+                sys.exit(1)
+            resolution = reso_hist.GetBinContent(1)
+            reso_hist.SetDirectory(0)
+            reso_file.Close()
 
     if args.multitrial_folder != "":
         logger(f"Running multitrial projections with config: {args.config}", level='INFO')
@@ -339,9 +362,10 @@ if __name__ == "__main__":
 
             # Cut on centrality and pt on data applied in the preprocessing
             logger(f'Projecting distributions for {pt_min:.1f} < pT < {pt_max:.1f} GeV/c')
-            pt_label = f"pt_{int(pt_min*10)}_{int(pt_max*10)}"
+            pt_label = f"pt_{int(pt_min*100)}_{int(pt_max*100)}"
             make_dir_root_file(pt_label, outfile)
             sparse_flow, sparses_reco, sparses_gen, axes = get_pt_preprocessed_sparses(config, pt_label)
+
             outfile.cd(pt_label)
             if operations.get("proj_data"):
                 sparse_flow["FlowSP"].GetAxis(axes['FlowSP']['ScoreFD']).SetRangeUser(fd_min, fd_max)

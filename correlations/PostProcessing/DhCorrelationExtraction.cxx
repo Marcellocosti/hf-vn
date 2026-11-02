@@ -273,6 +273,9 @@ Bool_t DhCorrelationExtraction::ExtractCorrelations()
     std::cout << "Processing pool " << iPool << std::endl;
     hSE_2D_Raw[iPool] = ProjCorrelHisto(kSE, iPool);
     hME_2D_Raw[iPool] = ProjCorrelHisto(kME, iPool);
+    hSE_2D_Raw[iPool]->Sumw2();
+    hME_2D_Raw[iPool]->Sumw2();
+
 
     hME_2D_Normalized[iPool] = reinterpret_cast<TH2D*>(hME_2D_Raw[iPool]->Clone(Form("hNormalizedCorrel_ME_2D_Pool%d", iPool)));
     // Normalize ME plots for the entries in (deltaEta, deltaPhi) = (0, 0)
@@ -281,7 +284,7 @@ Bool_t DhCorrelationExtraction::ExtractCorrelations()
 
     // Apply Event Mixing Correction
     hCorrectedCorrel_2D[iPool] = reinterpret_cast<TH2D*>(hSE_2D_Raw[iPool]->Clone(Form("hCorrectedCorrel_2D_Pool%d", iPool)));
-    // hCorrectedCorrel_2D[iPool]->Sumw2();
+    hCorrectedCorrel_2D[iPool]->Sumw2();
     hCorrectedCorrel_2D[iPool]->Divide(hME_2D_Normalized[iPool]);
     std::cout << "Applied ME correction for pool " << iPool << std::endl;
 
@@ -669,8 +672,11 @@ TH1D* DhCorrelationExtraction::CorrectedPairsMassDistr(TH2D* hRawSE, TH2D* hCorr
   Int_t binDeltaEtaRightMax = hRawSE->GetXaxis()->FindBin(fDeltaEtaRightMax - 0.01);
   Int_t nBinDeltaEta = hCorrectedCorrel->GetXaxis()->GetNbins();
 
-  Int_t binDeltaPhiMin = hRawSE->GetYaxis()->FindBin(fDeltaPhiBins.front());
-  Int_t binDeltaPhiMax = hRawSE->GetYaxis()->FindBin(fDeltaPhiBins.back());
+  // NB: FindBin() puts a value that sits exactly on a bin's upper edge into the bin ABOVE it,
+  // so the window edges must be pulled 1e-6 inside the bin (same idea as the +-0.01 nudge used
+  // for deltaEta just above); otherwise the SE/ME ratio is integrated over one extra deltaPhi bin.
+  Int_t binDeltaPhiMin = hRawSE->GetYaxis()->FindBin(fDeltaPhiBins.front() + 1e-6);
+  Int_t binDeltaPhiMax = hRawSE->GetYaxis()->FindBin(fDeltaPhiBins.back() - 1e-6);
 
   if (fDeltaEtaIntegrated) {
     // --- Integrated ---

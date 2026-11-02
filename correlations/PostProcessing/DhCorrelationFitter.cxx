@@ -15,6 +15,10 @@
 /// \author Swapnesh Santosh Khade <swapnesh.santosh.khade@cern.ch>
 
 #include "DhCorrelationFitter.h"
+#include "TROOT.h"
+
+#include "Fit/BinData.h"
+#include "HFitInterface.h"
 
 #include <TError.h>
 #include <TF1.h>
@@ -38,6 +42,23 @@
 #include <cstdio>
 #include <iostream>
 
+//_____________________________________________________________________________
+// Static helper: GausPeriodic (baseline + periodic near-side/away-side Gaussians).
+// Shared by the LM pre-fit and the simultaneous fit so the two stay consistent.
+static Double_t GausPeriodicValue(Double_t x, Double_t bl, Double_t aNS, Double_t sNS, Double_t aAS, Double_t sAS)
+{
+  Double_t dx = x;
+  Double_t gNS = 1.0 / (TMath::Sqrt(2.0 * TMath::Pi()) * sNS) *
+                 (TMath::Exp(-dx * dx / (2.0 * sNS * sNS)) +
+                  TMath::Exp(-(dx - 2.0 * TMath::Pi()) * (dx - 2.0 * TMath::Pi()) / (2.0 * sNS * sNS)) +
+                  TMath::Exp(-(dx + 2.0 * TMath::Pi()) * (dx + 2.0 * TMath::Pi()) / (2.0 * sNS * sNS)));
+  Double_t gAS = 1.0 / (TMath::Sqrt(2.0 * TMath::Pi()) * sAS) *
+                 (TMath::Exp(-(dx - TMath::Pi()) * (dx - TMath::Pi()) / (2.0 * sAS * sAS)) +
+                  TMath::Exp(-(dx - 3.0 * TMath::Pi()) * (dx - 3.0 * TMath::Pi()) / (2.0 * sAS * sAS)) +
+                  TMath::Exp(-(dx + TMath::Pi()) * (dx + TMath::Pi()) / (2.0 * sAS * sAS)));
+  return bl + aNS * gNS + aAS * gAS;
+}
+
 DhCorrelationFitter::DhCorrelationFitter() : // default constructor
                                              fIsReflected(kFALSE),
                                              fTypeOfFitFunc(kConstwoGaus),
@@ -57,6 +78,7 @@ DhCorrelationFitter::DhCorrelationFitter() : // default constructor
                                              fIsTotal(kTRUE),
                                              fWithPedLM(kFALSE),
                                              fFixLMFactor(kFALSE),
+                                             fUseExternalLMTmpl(kFALSE),
                                              fNbasleinePoints(0),
                                              fBinsBaseline(0x0),
                                              fHist(0x0),
@@ -120,6 +142,7 @@ DhCorrelationFitter::DhCorrelationFitter(TH1F* histoToFit, Double_t min, Double_
                                                                                          fIsTotal(kTRUE),
                                                                                          fWithPedLM(kFALSE),
                                                                                          fFixLMFactor(kFALSE),
+                                                                                         fUseExternalLMTmpl(kFALSE),
                                                                                          fNbasleinePoints(0),
                                                                                          fBinsBaseline(0x0),
                                                                                          fHist(0x0),
@@ -332,6 +355,14 @@ void DhCorrelationFitter::Fitting(Bool_t drawSplitTerm, Bool_t useExternalPars)
     Error("DhCorrelationFitter::Fitting", "No histogram to fit!");
     return;
   }
+
+  if (fTypeOfFitFunc == kSimultaneousFit) {
+    SimultaneousFit();
+    CalculateYieldsAboveBaseline();
+    fHist->SetTitle(";#Delta#varphi (rad); #frac{1}{N_{D}}#frac{dN^{assoc}}{d#Delta#varphi} (rad^{-1})");
+    SetSingleTermsForDrawing(drawSplitTerm);
+    return;
+  }
   // -> fFixBase = 0 : baseline free
   //             = 1 : fix the baseline to the minimum of the histogram
   //             < 0 : fix the baseline to the weighted average of the abs(fFixBaseline) lower points
@@ -389,6 +420,9 @@ void DhCorrelationFitter::Fitting(Bool_t drawSplitTerm, Bool_t useExternalPars)
   }
   TMatrixD cor = fitptr->GetCorrelationMatrix();
   TMatrixD cov = fitptr->GetCovarianceMatrix();
+  // Store covariance matrix for later access from Python
+  fCovMatrix.ResizeTo(cov.GetNrows(), cov.GetNcols());
+  fCovMatrix = cov;
   printf("[INFO] Correlation Matrix - The final one! \n");
   cor.Print();
   gMinuit->mnmatu(1);
@@ -427,6 +461,23 @@ void DhCorrelationFitter::Fitting(Bool_t drawSplitTerm, Bool_t useExternalPars)
   printf("[RESULT MINE] Bin counting results: NS Yield = %.3f +- %.3f \n[RESULT MINE] Bin counting results: AS Yield: %.3f +- %.3f \n[RESULT MINE] baseline = %.3f \n", fNSyield, fNSyieldErr, fASyield, fASyieldErr, baselinBinCount);*/
 }
 
+//_____________________________________________________________________________
+Double_t DhCorrelationFitter::GetCovMatrixElement(Int_t i, Int_t j) const
+{
+  if (fCovMatrix.GetNrows() == 0) return 0.;
+  if (i < 0 || i >= fCovMatrix.GetNrows() || j < 0 || j >= fCovMatrix.GetNcols()) return 0.;
+  return fCovMatrix(i, j);
+}
+
+//_____________________________________________________________________________
+Double_t DhCorrelationFitter::GetLMTemplateCovMatrixElement(Int_t i, Int_t j) const
+{
+  if (fLMCovMatrix.GetNrows() == 0) return 0.;
+  if (i < 0 || i >= fLMCovMatrix.GetNrows() || j < 0 || j >= fLMCovMatrix.GetNcols()) return 0.;
+  return fLMCovMatrix(i, j);
+}
+
+//_____________________________________________________________________________
 void DhCorrelationFitter::SetFitFunction()
 {
   // -> fitFunc = 1: const + G NS + G AS (w/o periodicity)
@@ -844,6 +895,9 @@ void DhCorrelationFitter::SetFitFunction()
       fPed = new TF1("fPed", "[0]", fMinCorr, fMaxCorr); // Pedestal
 
       break;
+
+    case 11: // simultaneous LM+HM fit (handled in Fitting() -> SimultaneousFit())
+      break;
   }
 }
 
@@ -972,7 +1026,14 @@ void DhCorrelationFitter::BuildLMOutput()
       fMinCorr, fMaxCorr);
     fGausFit->SetParameter(0, minVal);
     fGausFit->SetParLimits(0, 0, maxVal*2);
-    fGausFit->SetParameters(1, 0.5*(maxVal-minVal));
+    // N.B. SetParameter (not SetParameters): SetParameters(p0, p1, ...) assigns from par0 on and
+    // would silently overwrite the baseline starting value set above with 1.0
+    fGausFit->SetParameter(1, 0.5*(maxVal-minVal));
+    // NOTE: for weakly modulated templates the amplitude (the peak integral, ~1.2-1.5x the peak
+    // height) sits exactly at this bound; MINUIT then reports a zero error and the stored
+    // covariance entry is 0, so that variation is not sampled by the LM systematic. Widening the
+    // bound instead gives physically meaningless amplitudes/errors for those templates, so the
+    // original bound is kept deliberately (same choice as the tempFunc=4 branch).
     fGausFit->SetParLimits(1, 0.01, maxVal-minVal);
     fGausFit->SetParameter(2, TMath::Pi()/8);
     fGausFit->SetParLimits(2, TMath::Pi()/16, TMath::Pi());
@@ -981,25 +1042,64 @@ void DhCorrelationFitter::BuildLMOutput()
     fGausFit->SetParameter(4, TMath::Pi()/8);
     fGausFit->SetParLimits(4, TMath::Pi()/16, TMath::Pi());
     fTempHisto->Fit(fGausFit, "RIS", "", fMinCorr, fMaxCorr);
+    //  set parameters name
+    fGausFit->SetParName(0, "Baseline");
+    fGausFit->SetParName(1, "Amplitude1");
+    fGausFit->SetParName(2, "Sigma1");
+    fGausFit->SetParName(3, "Amplitude2");
+    fGausFit->SetParName(4, "Sigma2");
 
-    fTemplateFunc = static_cast<TF1*>(fTempHisto->GetFunction("fGausFit")->Clone("fLMTemplateFunc"));
+    fTempHisto->GetListOfFunctions()->Remove(fGausFit);  // detach from histogram, avoid Clone+Streamer
+    fGausFit->SetName("fLMTemplateFunc");
+    fTemplateFunc = fGausFit;  // transfer ownership
     fTemplateFunc->SetRange(fMinCorr, fMaxCorr);
     fBaseline = fTemplateFunc->GetMinimum(fMinCorr, fMaxCorr);
     fErrBaseline = 0.0;
     printf("[INFO] BuildLMOutput: Fitted Gaus LM template (tempFunc=3) baseline=%.6f\n", fBaseline);
-    delete fGausFit;
 
   } else if (fTempFunc == 4) {
     // --- Fit GausPeriodic to LM template ----------------------------------
     TVirtualFitter::SetMaxIterations(50000);
     Double_t minVal = fTempHisto->GetMinimum();
     Double_t maxVal = fTempHisto->GetMaximum();
+    // Remove stale TF1 with same name to avoid TFormula streamer mismatch
+    if (gROOT->GetListOfFunctions()->FindObject("fGausPerFit")) {
+      delete gROOT->GetListOfFunctions()->Remove(gROOT->GetListOfFunctions()->FindObject("fGausPerFit"));
+    }
+    if (gROOT->GetListOfFunctions()->FindObject("fLMTemplateFunc")) {
+      delete gROOT->GetListOfFunctions()->Remove(gROOT->GetListOfFunctions()->FindObject("fLMTemplateFunc"));
+    }
     TF1* fGausPerFit = new TF1("fGausPerFit",
       "[0]+[1]/(TMath::Sqrt(2*TMath::Pi())*[2])*TMath::Exp(-x*x/(2*[2]*[2]))+[1]/(TMath::Sqrt(2*TMath::Pi())*[2])*TMath::Exp(-(x-2*TMath::Pi())*(x-2*TMath::Pi())/(2*[2]*[2]))+[1]/(TMath::Sqrt(2*TMath::Pi())*[2])*TMath::Exp(-(x+2*TMath::Pi())*(x+2*TMath::Pi())/(2*[2]*[2]))+[3]/(TMath::Sqrt(2*TMath::Pi())*[4])*TMath::Exp(-(x-TMath::Pi())*(x-TMath::Pi())/(2*[4]*[4]))+[3]/(TMath::Sqrt(2*TMath::Pi())*[4])*TMath::Exp(-(x-3*TMath::Pi())*(x-3*TMath::Pi())/(2*[4]*[4]))+[3]/(TMath::Sqrt(2*TMath::Pi())*[4])*TMath::Exp(-(x+TMath::Pi())*(x+TMath::Pi())/(2*[4]*[4]))",
       fMinCorr, fMaxCorr);
+
+    if (fUseExternalLMTmpl) {
+      // if (fTemplateFunc) {
+      //   // fTemplateFunc set via SetLMTemplateFunction — reuse
+      //   fTemplateFunc->SetRange(fMinCorr, fMaxCorr);
+      //   fBaseline = fTemplateFunc->GetMinimum(fMinCorr, fMaxCorr);
+      //   fErrBaseline = 0.0;
+      //   printf("[INFO] BuildLMOutput: Using external TF1 baseline=%.6f\n", fBaseline);
+      //   delete fGausPerFit;
+      //   return;
+      // }
+      // fTemplateFunc not set — build from fExternalLMPars via fGausPerFit
+      for (int i = 0; i < 5; i++) {
+        fGausPerFit->SetParameter(i, fExternalLMPars[i]);
+      }
+      fGausPerFit->SetName("fLMTemplateFunc");      // rename to avoid Clone+Streamer mismatch
+      fTemplateFunc = fGausPerFit;                   // transfer ownership directly
+      fTemplateFunc->SetRange(fMinCorr, fMaxCorr);
+      fBaseline = fExternalLMPars[0];
+      fErrBaseline = 0.0;
+      printf("[INFO] BuildLMOutput: External params fixed baseline=%.6f\n", fBaseline);
+      return;
+    }
     fGausPerFit->SetParameter(0, minVal);
     fGausPerFit->SetParLimits(0, 0, maxVal*2);
-    fGausPerFit->SetParameters(1, 0.5*(maxVal-minVal));
+    // N.B. SetParameter (not SetParameters): SetParameters(p0, p1, ...) assigns from par0 on and
+    // would silently overwrite the baseline starting value set above with 1.0
+    fGausPerFit->SetParameter(1, 0.5*(maxVal-minVal));
     fGausPerFit->SetParLimits(1, 0.01, maxVal-minVal);
     fGausPerFit->SetParameter(2, TMath::Pi()/8);
     fGausPerFit->SetParLimits(2, TMath::Pi()/16, TMath::Pi());
@@ -1007,15 +1107,119 @@ void DhCorrelationFitter::BuildLMOutput()
     fGausPerFit->SetParLimits(3, 0.01, maxVal-minVal);
     fGausPerFit->SetParameter(4, TMath::Pi()/8);
     fGausPerFit->SetParLimits(4, TMath::Pi()/16, TMath::Pi());
-    fTempHisto->Fit(fGausPerFit, "RIS", "", fMinCorr, fMaxCorr);
+        //  set parameters name
+    fGausPerFit->SetParName(0, "Baseline");
+    fGausPerFit->SetParName(1, "Amplitude NS");
+    fGausPerFit->SetParName(2, "Sigma NS");
+    fGausPerFit->SetParName(3, "Amplitude AS");
+    fGausPerFit->SetParName(4, "Sigma AS");
 
-    fTemplateFunc = static_cast<TF1*>(fTempHisto->GetFunction("fGausPerFit")->Clone("fLMTemplateFunc"));
+    // Store LM template fit covariance matrix
+    TFitResultPtr lmFitPtr = fTempHisto->Fit(fGausPerFit, "RIS", "", fMinCorr, fMaxCorr);
+    if (lmFitPtr.Get() != nullptr) {
+      fLMCovMatrix.ResizeTo(lmFitPtr->GetCovarianceMatrix().GetNrows(),
+                            lmFitPtr->GetCovarianceMatrix().GetNcols());
+      fLMCovMatrix = lmFitPtr->GetCovarianceMatrix();
+    }
+
+    fTempHisto->GetListOfFunctions()->Remove(fGausPerFit);  // detach from histogram, avoid Clone+Streamer
+    fGausPerFit->SetName("fLMTemplateFunc");
+    fTemplateFunc = fGausPerFit;  // transfer ownership
     fTemplateFunc->SetRange(fMinCorr, fMaxCorr);
-    fBaseline = fTemplateFunc->GetMinimum(fMinCorr, fMaxCorr);
+    // using the fTemplateFunc to get the baseline value (minimum of the function in the fit range)
+    // fBaseline = fTemplateFunc->GetMinimum(fMinCorr, fMaxCorr);
+    // or using the fit parameter 0 as the baseline value (the constant term of the function)
+    fBaseline = fTemplateFunc->GetParameter(0);
     fErrBaseline = 0.0;
     printf("[INFO] BuildLMOutput: Fitted GausPeriodic LM template (tempFunc=4) baseline=%.6f\n", fBaseline);
-    delete fGausPerFit;
+  } else if (fTempFunc == 5) {
+    // --- Fit VonMises (both peak positions fixed at 0 and pi) to LM template ----
+    // par: 0 = baseline, 1 = NS peak height, 2 = NS kappa, 3 = AS peak height, 4 = AS kappa
+    TVirtualFitter::SetMaxIterations(50000);
+    Double_t minVal = fTempHisto->GetMinimum();
+    Double_t maxVal = fTempHisto->GetMaximum();
+    // Remove stale TF1 with same name to avoid TFormula streamer mismatch
+    if (gROOT->GetListOfFunctions()->FindObject("fVonMisesFit")) {
+      delete gROOT->GetListOfFunctions()->Remove(gROOT->GetListOfFunctions()->FindObject("fVonMisesFit"));
+    }
+    if (gROOT->GetListOfFunctions()->FindObject("fLMTemplateFunc")) {
+      delete gROOT->GetListOfFunctions()->Remove(gROOT->GetListOfFunctions()->FindObject("fLMTemplateFunc"));
+    }
+    // Amplitude (AREA) parametrisation, the user's original formula:
+    //   par = ped, Y_NS, kappa_NS, Y_AS, kappa_AS   (Y = pairs under the peak)
+    // Alternative PEAK-HEIGHT form, kept for reference (par[1]/par[3] = heights above the baseline,
+    // bounded by maxVal; related by Y = h*2*pi*I0(kappa)/e^kappa):
+    //   "[0]+[1]*TMath::Exp([2]*(TMath::Cos(x)-1))+[3]*TMath::Exp([4]*(TMath::Cos(x-TMath::Pi())-1))"
+    TF1* fVonMisesFit = new TF1("fVonMisesFit",
+      "[0]+[1]/(2*TMath::Pi()*TMath::BesselI0([2]))*TMath::Exp([2]*TMath::Cos(x))+[3]/(2*TMath::Pi()*TMath::BesselI0([4]))*TMath::Exp([4]*TMath::Cos(x-TMath::Pi()))",
+      fMinCorr, fMaxCorr);
+
+    if (fUseExternalLMTmpl) {
+      // fTemplateFunc not set — build from fExternalLMPars
+      for (int i = 0; i < 5; i++) {
+        fVonMisesFit->SetParameter(i, fExternalLMPars[i]);
+      }
+      fVonMisesFit->SetName("fLMTemplateFunc");    // rename to avoid Clone+Streamer mismatch
+      fTemplateFunc = fVonMisesFit;                 // transfer ownership directly
+      fTemplateFunc->SetRange(fMinCorr, fMaxCorr);
+      fBaseline = fExternalLMPars[0];
+      fErrBaseline = 0.0;
+      printf("[INFO] BuildLMOutput: External von Mises params fixed baseline=%.6f\n", fBaseline);
+      return;
+    }
+    //   ceil_NS = sum over [-pi/2, pi/2) of content*binWidth     (near-side window)
+    //   ceil_AS = sum over [ pi/2, 3pi/2] of content*binWidth    (away-side window)
+    Double_t ceilNS = 0., ceilAS = 0., ceilAll = 0.;
+    for (int ib = 1; ib <= fTempHisto->GetNbinsX(); ib++) {
+      Double_t xc = fTempHisto->GetBinCenter(ib);
+      Double_t binArea = fTempHisto->GetBinContent(ib); // * fTempHisto->GetBinWidth(ib);
+      if (xc >= -TMath::PiOver2() && xc < TMath::PiOver2())     ceilNS += binArea;
+      else if (xc >= TMath::PiOver2() && xc <= 1.5*TMath::Pi()) ceilAS += binArea;
+      ceilAll += binArea;
+    }
+    Double_t kappaStart =  64./(TMath::Pi()*TMath::Pi());
+    Double_t kappaMax   = 256./(TMath::Pi()*TMath::Pi());
+    // start from "peak height = half the template range", converted to the equivalent area
+    Double_t yieldStart = 0.5*(maxVal-minVal) * 2.*TMath::Pi()*TMath::BesselI0(kappaStart) / TMath::Exp(kappaStart);
+    fVonMisesFit->SetParameter(0, minVal);
+    fVonMisesFit->SetParLimits(0, 0, maxVal*2);
+    fVonMisesFit->SetParameter(1, yieldStart);
+    fVonMisesFit->SetParLimits(1, 0.01, ceilNS);
+    fVonMisesFit->SetParameter(2, kappaStart);
+    fVonMisesFit->SetParLimits(2, 1.0, kappaMax);
+    fVonMisesFit->SetParameter(3, yieldStart);
+    fVonMisesFit->SetParLimits(3, 0.01, ceilAS);
+    fVonMisesFit->SetParameter(4, kappaStart);
+    fVonMisesFit->SetParLimits(4, 1.0, kappaMax);
+    // Global variant (one ceiling for both sides, not distinguishing near/away) - swap in if needed:
+    // fVonMisesFit->SetParLimits(1, 0.01, ceilAll);
+    // fVonMisesFit->SetParLimits(3, 0.01, ceilAll);
+    //  set parameters name
+    fVonMisesFit->SetParName(0, "Baseline");
+    fVonMisesFit->SetParName(1, "Amplitude NS");
+    fVonMisesFit->SetParName(2, "Kappa NS");
+    fVonMisesFit->SetParName(3, "Amplitude AS");
+    fVonMisesFit->SetParName(4, "Kappa AS");
+
+    // Store LM template fit covariance matrix
+    TFitResultPtr lmFitPtr = fTempHisto->Fit(fVonMisesFit, "RIS", "", fMinCorr, fMaxCorr);
+    if (lmFitPtr.Get() != nullptr) {
+      fLMCovMatrix.ResizeTo(lmFitPtr->GetCovarianceMatrix().GetNrows(),
+                            lmFitPtr->GetCovarianceMatrix().GetNcols());
+      fLMCovMatrix = lmFitPtr->GetCovarianceMatrix();
+    }
+
+    fTempHisto->GetListOfFunctions()->Remove(fVonMisesFit);  // detach from histogram, avoid Clone+Streamer
+    fVonMisesFit->SetName("fLMTemplateFunc");
+    fTemplateFunc = fVonMisesFit;  // transfer ownership
+    fTemplateFunc->SetRange(fMinCorr, fMaxCorr);
+    // using the fit parameter 0 as the baseline value (the constant term of the function)
+    // fBaseline = fTemplateFunc->GetParameter(0);
+    fBaseline = fTemplateFunc->GetMinimum(fMinCorr, fMaxCorr);
+    fErrBaseline = 0.0;
+    printf("[INFO] BuildLMOutput: Fitted von Mises LM template (tempFunc=5) baseline=%.6f\n", fBaseline);
   }
+
 
   // ---- Build fLMOutput (clone of original template data for drawing) ----
   fLMOutput = (TH1D*)fTempHisto->Clone("fLMOutput");
@@ -1105,6 +1309,29 @@ void DhCorrelationFitter::BuildLMOutput()
     fAway->SetLineWidth(2);
     fAway->SetLineStyle(9);
     fLMOutput->GetListOfFunctions()->Add(fAway);
+  } else if (fTempFunc == 5 && fTemplateFunc) {
+    // VonMises (peaks fixed at 0 and pi): near = BL + Y_N/(2pi*I0(kappa_N))*exp(kappa_N*cos(x))
+    TF1* fNear = new TF1("fNearVonMises",
+      "[0]+[1]/(2*TMath::Pi()*TMath::BesselI0([2]))*TMath::Exp([2]*TMath::Cos(x))",
+      fMinCorr, fMaxCorr);
+    fNear->SetParameters(fTemplateFunc->GetParameter(0),
+                         fTemplateFunc->GetParameter(1),
+                         fTemplateFunc->GetParameter(2));
+    fNear->SetLineColor(kAzure+2);
+    fNear->SetLineWidth(2);
+    fNear->SetLineStyle(9);
+    fLMOutput->GetListOfFunctions()->Add(fNear);
+
+    TF1* fAway = new TF1("fAwayVonMises",
+      "[0]+[1]/(2*TMath::Pi()*TMath::BesselI0([2]))*TMath::Exp([2]*TMath::Cos(x-TMath::Pi()))",
+      fMinCorr, fMaxCorr);
+    fAway->SetParameters(fTemplateFunc->GetParameter(0),
+                         fTemplateFunc->GetParameter(3),
+                         fTemplateFunc->GetParameter(4));
+    fAway->SetLineColor(kGreen+2);
+    fAway->SetLineWidth(2);
+    fAway->SetLineStyle(9);
+    fLMOutput->GetListOfFunctions()->Add(fAway);
   }
   printf("[INFO] DhCorrelationFitter: BuildLMOutput completed for tempFunc=%d\n", fTempFunc);
 }
@@ -1120,8 +1347,8 @@ Double_t DhCorrelationFitter::TemplateFitFunction(Double_t* x, Double_t* par)
     // Spline interpolation
     if (!fSpline) return 0.0;
     templateVal = fSpline->Eval(x[0]);
-  } else if (fTempFunc == 3 || fTempFunc == 4) {
-    // Gaus/GausPeriodic function evaluation
+  } else if (fTempFunc == 3 || fTempFunc == 4 || fTempFunc == 5) {
+    // Gaus/GausPeriodic/VonMises function evaluation
     if (!fTemplateFunc) return 0.0;
     templateVal = fTemplateFunc->Eval(x[0]);
   }
@@ -1143,7 +1370,7 @@ Double_t DhCorrelationFitter::TemplateFitFunctionWPed(Double_t* x, Double_t* par
   } else if (fTempFunc == 1 || fTempFunc == 2) {
     if (!fSpline) return 0.0;
     templateVal = fSpline->Eval(x[0]);
-  } else if (fTempFunc == 3 || fTempFunc == 4) {
+  } else if (fTempFunc == 3 || fTempFunc == 4 || fTempFunc == 5) {
     if (!fTemplateFunc) return 0.0;
     templateVal = fTemplateFunc->Eval(x[0]);
   }
@@ -1556,6 +1783,8 @@ void DhCorrelationFitter::SetSingleTermsForDrawing(Bool_t draw)
     par = new Double_t[11];
   } else if (fTypeOfFitFunc == 10) {
     par = new Double_t[4];
+  } else if (fTypeOfFitFunc == 11) {
+    par = new Double_t[9];
   } else {
     Printf("[ERROR] DhCorrelationFitter::SetSingleTermsForDrawing, wrong type of function");
     return;
@@ -1831,6 +2060,73 @@ void DhCorrelationFitter::SetSingleTermsForDrawing(Bool_t draw)
       pvStatTests1->Draw("same");
       leg->Draw("same");
     }
+  } else if (fTypeOfFitFunc == 11) {
+    fFit->GetParameters(par);
+    fFit->SetLineWidth(4);
+
+    fPed->SetParameter(0, par[6]);
+    fPed->SetLineColor(kGray + 2);
+    fPed->SetLineStyle(3);
+    fPed->SetLineWidth(4);
+
+    fLM->SetParameter(0, par[5]);
+    fLM->SetParameter(1, par[0]);
+    fLM->SetParameter(2, par[1]);
+    fLM->SetParameter(3, par[2]);
+    fLM->SetParameter(4, par[3]);
+    fLM->SetLineColor(kAzure + 2);
+    fLM->SetLineStyle(8);
+    fLM->SetLineWidth(4);
+
+    fFlow->SetParameter(0, par[6]);
+    fFlow->SetParameter(1, par[7]);
+    fFlow->SetParameter(2, par[8]);
+    fFlow->SetLineColor(kGreen + 2);
+    fFlow->SetLineStyle(9);
+    fFlow->SetLineWidth(4);
+
+    fv2->SetParameter(0, par[6]);
+    fv2->SetParameter(1, par[7]);
+    fv2->SetLineColor(46);
+    fv2->SetLineStyle(10);
+    fv2->SetLineWidth(4);
+
+    fv3->SetParameter(0, par[6]);
+    fv3->SetParameter(1, par[8]);
+    fv3->SetLineColor(41);
+    fv3->SetLineStyle(10);
+    fv3->SetLineWidth(4);
+
+    TPaveText* pvStatTests1 = new TPaveText(0.18, 0.55, 0.45, 0.88, "NDC");
+    pvStatTests1->SetFillStyle(0);
+    pvStatTests1->SetTextSize(0.040);
+    pvStatTests1->SetBorderSize(0);
+    pvStatTests1->AddText(0., 0.65, Form("LM Factor = %.3f #pm %.3f ", par[5], fFit->GetParError(5)));
+    pvStatTests1->AddText(0., 0.52, Form("Flow Factor = %.3f #pm %.3f ", par[6], fFit->GetParError(6)));
+    pvStatTests1->AddText(0., 0.42, Form("v_{2#Delta} = %.5f #pm %.5f ", par[7], fFit->GetParError(7)));
+    pvStatTests1->AddText(0., 0.32, Form("v_{3#Delta} = %.5f #pm %.5f ", par[8], fFit->GetParError(8)));
+
+    TLegend* leg = new TLegend(0.65, 0.65, 0.95, 0.88);
+    leg->SetFillStyle(0);
+    leg->SetBorderSize(0);
+    leg->SetTextSize(0.04);
+    leg->AddEntry(fFit, "Global Fit", "l");
+    leg->AddEntry(fPed, "Pedestal", "l");
+    leg->AddEntry(fLM, "LM", "l");
+    leg->AddEntry(fFlow, "HM", "l");
+    leg->AddEntry(fv2, "v_{2} component", "l");
+    leg->AddEntry(fv3, "v_{3} component", "l");
+
+    if (draw) {
+      fPed->Draw("same");
+      fv3->Draw("same");
+      fv2->Draw("same");
+      fFlow->Draw("same");
+      fLM->Draw("same");
+      fFit->Draw("same");
+      pvStatTests1->Draw("same");
+      leg->Draw("same");
+    }
   }  else {
     fFit->GetParameters(par);
     fFit->SetLineWidth(4);
@@ -1873,5 +2169,259 @@ void DhCorrelationFitter::SetSingleTermsForDrawing(Bool_t draw)
       fGausNS->Draw("same");
       pvStatTests1->Draw("same");
     }
+  }
+}
+
+//_____________________________________________________________________________
+void DhCorrelationFitter::SetLMTemplateFunction(TF1* func)
+{
+  // Clone the TF1 so C++ owns it; Python side can be garbage collected safely
+  if (fTemplateFunc) { delete fTemplateFunc; fTemplateFunc = 0; }
+  fTemplateFunc = (TF1*)func->Clone("fLMTemplate");
+  fUseExternalLMTmpl = kTRUE;
+}
+
+//_____________________________________________________________________________
+void DhCorrelationFitter::SetLMTemplateParams(Int_t npar, Double_t* params)
+{
+  fUseExternalLMTmpl = kTRUE;
+  for (int i = 0; i < npar && i < 5; i++) {
+    fExternalLMPars[i] = params[i];
+  }
+}
+
+//_____________________________________________________________________________
+Double_t DhCorrelationFitter::LMFitFunction(Double_t* x, Double_t* par)
+{
+  // LM template fit function: BL + A_NS*gNS + A_AS*gAS
+  // par[0]=A_NS, par[1]=sNS, par[2]=A_AS, par[3]=sAS, par[4]=BL
+  return GausPeriodicValue(x[0], par[4], par[0], par[1], par[2], par[3]);
+}
+
+//_____________________________________________________________________________
+Double_t DhCorrelationFitter::HMFitFunction(Double_t* x, Double_t* par)
+{
+  // HM template fit function: F*(A_NS*gNS + A_AS*gAS) + G*(1 + 2*v2*cos2x + 2*v3*cos3x)
+  // par[0]=A_NS, par[1]=sNS, par[2]=A_AS, par[3]=sAS, par[5]=F, par[6]=G, par[7]=v2, par[8]=v3
+  // (par[4]=BL is NOT used by the HM function)
+  Double_t peaks = GausPeriodicValue(x[0], 0.0, par[0], par[1], par[2], par[3]);
+  Double_t flow = par[6] * (1.0 + 2.0 * par[7] * TMath::Cos(2.0 * x[0]) + 2.0 * par[8] * TMath::Cos(3.0 * x[0]));
+  return par[5] * peaks + flow;
+}
+
+//_____________________________________________________________________________
+void DhCorrelationFitter::SimultaneousFit()
+{
+  if (!fTempHisto) {
+    Error("DhCorrelationFitter::SimultaneousFit", "No LM template histogram set!");
+    return;
+  }
+
+  // ---- Step 1: pre-fit GausPeriodic to LM template for initial values ----
+  TVirtualFitter::SetMaxIterations(50000);
+  Double_t minVal = fTempHisto->GetMinimum();
+  Double_t maxVal = fTempHisto->GetMaximum();
+  TF1* fGausPerFit = new TF1("fGausPerFit11",
+      [](Double_t* x, Double_t* p) { return GausPeriodicValue(x[0], p[0], p[1], p[2], p[3], p[4]); },
+      fMinCorr, fMaxCorr, 5);
+  fGausPerFit->SetParameter(0, minVal);
+  fGausPerFit->SetParLimits(0, 0, maxVal * 2);
+  fGausPerFit->SetParameter(1, 0.5 * (maxVal - minVal));
+  // NOTE: amplitude (peak integral, ~1.2-1.5x the peak height) may sit exactly at this bound for
+  // weakly modulated templates -> zero error, zero covariance entry, variation not sampled by the
+  // systematatics. Widening it gives unphysical amplitudes instead, so it is kept deliberately
+  // (same choice as the Gaus/GausPeriodic LM template branches).
+  fGausPerFit->SetParLimits(1, 0.01, maxVal - minVal);
+  fGausPerFit->SetParameter(2, TMath::Pi() / 8);
+  fGausPerFit->SetParLimits(2, TMath::Pi() / 16, TMath::Pi());
+  fGausPerFit->SetParameter(3, 0.5 * (maxVal - minVal));
+  fGausPerFit->SetParLimits(3, 0.01, maxVal - minVal);
+  fGausPerFit->SetParameter(4, TMath::Pi() / 8);
+  fGausPerFit->SetParLimits(4, TMath::Pi() / 16, TMath::Pi());
+  fTempHisto->Fit(fGausPerFit, "RIS", "", fMinCorr, fMaxCorr);
+  fTempHisto->GetListOfFunctions()->Remove(fGausPerFit); // detach to avoid double-free
+
+  Double_t prefitANS = fGausPerFit->GetParameter(1);
+  Double_t prefitSNS = fGausPerFit->GetParameter(2);
+  Double_t prefitAAS = fGausPerFit->GetParameter(3);
+  Double_t prefitSAS = fGausPerFit->GetParameter(4);
+  Double_t prefitBL = fGausPerFit->GetParameter(0);
+  printf("[INFO] SimultaneousFit: LM pre-fit BL=%.4f A_NS=%.4f sNS=%.4f A_AS=%.4f sAS=%.4f\n",
+         prefitBL, prefitANS, prefitSNS, prefitAAS, prefitSAS);
+
+  // ---- Step 2: build LM and HM fit functions (both 9 params) ----
+  TF1* fLMFunc = new TF1("fLMFunc", this, &DhCorrelationFitter::LMFitFunction, fMinCorr, fMaxCorr, 9);
+  TF1* fHMFunc = new TF1("fHMFunc", this, &DhCorrelationFitter::HMFitFunction, fMinCorr, fMaxCorr, 9);
+
+  const char* parNames[9] = {"Amplitude NS", "Sigma NS", "Amplitude AS", "Sigma AS", "Baseline",
+                             "F (LM Scale)", "G (Flow Scale)", "v_{2} delta", "v_{3} delta"};
+  for (int i = 0; i < 9; i++) {
+    fLMFunc->SetParName(i, parNames[i]);
+    fHMFunc->SetParName(i, parNames[i]);
+  }
+
+  Double_t init[9];
+  init[0] = prefitANS;
+  init[1] = prefitSNS;
+  init[2] = prefitAAS;
+  init[3] = prefitSAS;
+  init[4] = prefitBL;
+  init[5] = (fRyTrigger > 0 && fLMRyTrigger > 0) ? fRyTrigger / fLMRyTrigger : 1.1; // F
+  init[6] = fHist->GetMinimum(); // G
+  init[7] = 0.05; // v2
+  init[8] = 0.01; // v3
+
+  // ---- Step 3: build data + chi2 + global chi2 ----
+  ROOT::Fit::DataOptions opt;
+  ROOT::Fit::DataRange range;
+  range.SetRange(fMinCorr, fMaxCorr);
+  ROOT::Fit::BinData dataLM(opt, range);
+  ROOT::Fit::FillData(dataLM, fTempHisto);
+  ROOT::Fit::BinData dataHM(opt, range);
+  ROOT::Fit::FillData(dataHM, fHist);
+
+  ROOT::Math::WrappedMultiTF1 wfLM(*fLMFunc, 1);
+  ROOT::Math::WrappedMultiTF1 wfHM(*fHMFunc, 1);
+  ROOT::Fit::Chi2Function chi2LM(dataLM, wfLM);
+  ROOT::Fit::Chi2Function chi2HM(dataHM, wfHM);
+  GlobalChi2 globalChi2(chi2LM, chi2HM);
+
+  // ---- Step 4: fit ----
+  ROOT::Fit::Fitter fitter;
+  fitter.Config().SetParamsSettings(9, init);
+  fitter.Config().ParSettings(0).SetLimits(0.01, TMath::Max(maxVal - minVal, 0.02));
+  fitter.Config().ParSettings(1).SetLimits(TMath::Pi() / 16., TMath::Pi());
+  fitter.Config().ParSettings(2).SetLimits(0.01, TMath::Max(maxVal - minVal, 0.02));
+  fitter.Config().ParSettings(3).SetLimits(TMath::Pi() / 16., TMath::Pi());
+  fitter.Config().ParSettings(4).SetLimits(0., maxVal * 2.);
+  fitter.Config().ParSettings(5).SetLimits(0., 1.e6);
+  fitter.Config().ParSettings(6).SetLimits(0., 1.e9);
+  fitter.Config().ParSettings(7).SetLimits(-1., 1.);
+  fitter.Config().ParSettings(8).SetLimits(-1., 1.);
+  if (fFixLMFactor) {
+    fitter.Config().ParSettings(5).Fix();
+    printf("[INFO] SimultaneousFit: FixLMFactor=true -> fixing F (par 5) to %.6f\n", init[5]);
+    // fitter.Config().ParSettings(4).Fix();  // BL: keep free (constrained only by LM data)
+    // printf("[INFO] SimultaneousFit: FixLMFactor=true -> fixing BL (par 4) to %.6f\n", init[4]);
+  }
+  fitter.Config().MinimizerOptions().SetStrategy(1);
+  fitter.Config().MinimizerOptions().SetPrintLevel(0);
+  fitter.Config().MinimizerOptions().SetMaxIterations(20000);
+  fitter.Config().MinimizerOptions().SetMaxFunctionCalls(2000000);
+  fitter.Config().SetMinimizer("Minuit2", "Migrad");
+  // explicit step sizes: parameters span 6 orders of magnitude (G~1e4, v3~1e-2),
+  // Minuit's default relative step can stall; give each a sensible absolute step.
+  fitter.Config().ParSettings(0).SetStepSize(TMath::Max(0.1, 0.02 * TMath::Abs(init[0]))); // A_NS
+  fitter.Config().ParSettings(1).SetStepSize(TMath::Max(0.001, 0.02 * TMath::Abs(init[1]))); // sNS
+  fitter.Config().ParSettings(2).SetStepSize(TMath::Max(0.1, 0.02 * TMath::Abs(init[2]))); // A_AS
+  fitter.Config().ParSettings(3).SetStepSize(TMath::Max(0.001, 0.02 * TMath::Abs(init[3]))); // sAS
+  fitter.Config().ParSettings(4).SetStepSize(TMath::Max(0.1, 0.02 * TMath::Abs(init[4]))); // BL
+  fitter.Config().ParSettings(5).SetStepSize(TMath::Max(0.01, 0.02 * TMath::Abs(init[5]))); // F
+  fitter.Config().ParSettings(6).SetStepSize(TMath::Max(0.1, 0.02 * TMath::Abs(init[6]))); // G
+  fitter.Config().ParSettings(7).SetStepSize(0.01); // v2
+  fitter.Config().ParSettings(8).SetStepSize(0.01); // v3
+  for (int i = 0; i < 9; i++) {
+    fitter.Config().ParSettings(i).SetName(parNames[i]);
+  }
+
+  Bool_t isFitOk = fitter.FitFCN(9, globalChi2, 0, dataLM.Size() + dataHM.Size(), kFALSE);
+  ROOT::Fit::FitResult result = fitter.Result();
+  if (!isFitOk) {
+    Error("DhCorrelationFitter::SimultaneousFit", "Simultaneous fit: invalid minimum (status=%d), covariance unreliable. Using fitted parameters.", result.Status());
+  }
+
+  // ---- Step 5: store results (always populate members so downstream never dereferences null) ----
+  Double_t finalPar[9], finalErr[9];
+  for (int i = 0; i < 9; i++) {
+    // Even when the Hesse/covariance is invalid (status 2/3), the parameters are
+    // still at the minimum — keep them; only the errors are then unreliable (set 0).
+    finalPar[i] = result.Parameter(i);
+    finalErr[i] = isFitOk ? result.ParError(i) : 0.0;
+  }
+
+  if (fFit) { delete fFit; fFit = 0; }
+  fFit = fHMFunc; // transfer ownership (HM function, 9 params)
+  for (int i = 0; i < 9; i++) {
+    fFit->SetParameter(i, finalPar[i]);
+    fFit->SetParError(i, finalErr[i]);
+  }
+  // Write chi2/NDF back to fFit (FitFCN does not set them, unlike TH1::Fit).
+  // MinFcnValue and Ndf are valid even when the covariance/Hesse is invalid.
+  fFit->SetChisquare(result.MinFcnValue());
+  fFit->SetNDF((Int_t)result.Ndf());
+  fFit->SetNumberFitPoints((Int_t)(dataLM.Size() + dataHM.Size()));
+
+  if (fTemplateFunc) { delete fTemplateFunc; fTemplateFunc = 0; }
+  fTemplateFunc = new TF1("fLMTemplateFunc",
+      [](Double_t* x, Double_t* p) { return GausPeriodicValue(x[0], p[0], p[1], p[2], p[3], p[4]); },
+      fMinCorr, fMaxCorr, 5);
+  fTemplateFunc->SetParName(0, "Baseline");
+  fTemplateFunc->SetParName(1, "Amplitude NS");
+  fTemplateFunc->SetParName(2, "Sigma NS");
+  fTemplateFunc->SetParName(3, "Amplitude AS");
+  fTemplateFunc->SetParName(4, "Sigma AS");
+  fTemplateFunc->SetParameter(0, finalPar[4]); // BL
+  fTemplateFunc->SetParameter(1, finalPar[0]); // A_NS
+  fTemplateFunc->SetParameter(2, finalPar[1]); // sNS
+  fTemplateFunc->SetParameter(3, finalPar[2]); // A_AS
+  fTemplateFunc->SetParameter(4, finalPar[3]); // sAS
+
+  // covariance matrix (full 9x9)
+  fCovMatrix.ResizeTo(9, 9);
+  for (int i = 0; i < 9; i++) {
+    for (int j = 0; j < 9; j++) {
+      fCovMatrix(i, j) = isFitOk ? result.CovMatrix(i, j) : 0.0;
+    }
+  }
+  // LM sub-block (5x5): fTemplateFunc order {BL, A_NS, sNS, A_AS, sAS} = full {4, 0, 1, 2, 3}
+  Int_t lmMap[5] = {4, 0, 1, 2, 3};
+  fLMCovMatrix.ResizeTo(5, 5);
+  for (int i = 0; i < 5; i++) {
+    for (int j = 0; j < 5; j++) {
+      fLMCovMatrix(i, j) = isFitOk ? result.CovMatrix(lmMap[i], lmMap[j]) : 0.0;
+    }
+  }
+
+  // baseline for yield counting = G (HM flow pedestal)
+  fBaseline = finalPar[6];
+  fErrBaseline = finalErr[6];
+
+  // ---- drawing components (members, persist for canvas) ----
+  if (fPed) { delete fPed; fPed = 0; }
+  fPed = new TF1("fPed", "[0]", fMinCorr, fMaxCorr);
+  fPed->SetParameter(0, finalPar[6]); // G
+
+  if (fFlow) { delete fFlow; fFlow = 0; }
+  fFlow = new TF1("fFlow", "[0] * (1 + 2*[1]*TMath::Cos(2*x) + 2*[2]*TMath::Cos(3*x))", fMinCorr, fMaxCorr);
+  fFlow->SetParameter(0, finalPar[6]);
+  fFlow->SetParameter(1, finalPar[7]);
+  fFlow->SetParameter(2, finalPar[8]);
+
+  if (fv2) { delete fv2; fv2 = 0; }
+  fv2 = new TF1("fv2", "[0] + 2*[0]*[1]*TMath::Cos(2*x)", fMinCorr, fMaxCorr);
+  fv2->SetParameter(0, finalPar[6]);
+  fv2->SetParameter(1, finalPar[7]);
+
+  if (fv3) { delete fv3; fv3 = 0; }
+  fv3 = new TF1("fv3", "[0] + 2*[0]*[1]*TMath::Cos(3*x)", fMinCorr, fMaxCorr);
+  fv3->SetParameter(0, finalPar[6]);
+  fv3->SetParameter(1, finalPar[8]);
+
+  if (fLM) { delete fLM; fLM = 0; }
+  fLM = new TF1("fLM", [](Double_t* x, Double_t* p) { return p[0] * GausPeriodicValue(x[0], 0.0, p[1], p[2], p[3], p[4]); }, fMinCorr, fMaxCorr, 5);
+  fLM->SetParameter(0, finalPar[5]); // F
+  fLM->SetParameter(1, finalPar[0]); // A_NS
+  fLM->SetParameter(2, finalPar[1]); // sNS
+  fLM->SetParameter(3, finalPar[2]); // A_AS
+  fLM->SetParameter(4, finalPar[3]); // sAS
+
+  delete fGausPerFit;
+  delete fLMFunc;
+
+  if (isFitOk) {
+    printf("[INFO] SimultaneousFit: chi2/ndf = %.3f/%d  F=%.4f G=%.4f v2=%.4f v3=%.4f BL=%.4f\n",
+           result.MinFcnValue(), (Int_t)result.Ndf(), finalPar[5], finalPar[6], finalPar[7], finalPar[8], finalPar[4]);
+  } else {
+    printf("[INFO] SimultaneousFit: FIT FAILED (status=%d) - using initial values for output\n", result.Status());
   }
 }
