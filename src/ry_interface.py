@@ -15,7 +15,8 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 import tensorflow as tf
 tf.config.threading.set_intra_op_parallelism_threads(1)
 tf.config.threading.set_inter_op_parallelism_threads(1)
-sys.path.append(f"{os.path.dirname(os.path.abspath(__file__))}/../flareflyfitter/")
+SCRIPTS_DIR = PATH.Path(__file__).parent
+sys.path.append((PATH.Path(SCRIPTS_DIR) / ".." / "flareflyfitter").as_posix())
 from raw_yield_fitter import RawYieldFitter
 import matplotlib
 matplotlib.use('Agg')
@@ -226,7 +227,7 @@ def interface_raw_yield_fitter(config_path):
         mass_tasks.append(mass_task)
 
         for iPtHad, (ptHadMin, ptHadMax) in enumerate(zip(ptBinsHad[:-1], ptBinsHad[1:])):
-            strPtHad = f"PtHad_{int(ptHadMin*10)}_{int(ptHadMax*10)}"
+            strPtHad = f"PtHadBin_{int(ptHadMin*10)}_{int(ptHadMax*10)}"
             hTemp = TH1D(
                 f"hPairsYields_vs_DeltaPhi_{iPtCand}_{iPtHad}", 
                 "Associated Pair Raw Yields vs #Delta#phi;#Delta#phi (rad); Associated pairs raw yield", 
@@ -291,7 +292,7 @@ def interface_raw_yield_fitter(config_path):
                 hPairsYields_vs_DeltaPhi[key_hPairs].SetBinError(bin_idx, result['ry_unc'])
                 pdfs[key_hPairs][result['iDeltaPhi']] = result['pdfPath']
                 pdfs_residuals[key_hPairs][result['iDeltaPhi']] = result['pdfPathResiduals']
-                bar.text = f"Completed task {result['taskID']}: PtCandBin_{result['iPtCand']}, PtHad_{result['iPtHad']}, DeltaPhiBin_{result['iDeltaPhi']}"
+                bar.text = f"Completed task {result['taskID']}: PtCandBin_{result['iPtCand']}, PtHadBin_{result['iPtHad']}, DeltaPhiBin_{result['iDeltaPhi']}"
                 del future
                 bar()
             futures.clear()
@@ -340,37 +341,6 @@ def interface_raw_yield_fitter(config_path):
                     bar()
                 futures.clear()
                 gc.collect()
-
-    ry_trigger = {}
-    # build task and perform the fit for inv mass distribution of trigger candidates
-    inFileMassPath = str(outdir / "InvMass/InvMassVsPt.root")
-    with alive_bar(len(mass_tasks), title="Fitting mass distribution tasks") as bar:
-        with ProcessPoolExecutor(max_workers=min(len(mass_tasks), nWorkers)) as executor:
-            futures = {executor.submit(fit_task, task, config["fitConfig"], inFileMassPath, doMassFit=True): task for task in mass_tasks}
-            for future in as_completed(futures):
-                result = future.result()
-                ry_trigger[(result['iPtCand'], result['iPtHad'])] = (result['ry'], result['ry_unc'])
-                del future
-                bar()
-            futures.clear()
-            gc.collect()
-
-    # collect results into ROOT file
-    outROOT = TFile.Open(str(outFilePath / f"PairYieldsVsPhi.root"), "RECREATE")
-    for (iPtCand, iPtHad), histo in hPairsYields_vs_DeltaPhi.items():
-        subdir_pt = f"PtCandBin_{int(ptBinsCand[iPtCand]*10)}_{int(ptBinsCand[iPtCand+1]*10)}"
-        subdir_had = f"PtHad_{int(ptBinsHad[iPtHad]*10)}_{int(ptBinsHad[iPtHad+1]*10)}"
-        outROOT.mkdir(subdir_pt + "/" + subdir_had)
-        outROOT.cd(subdir_pt + "/" + subdir_had)
-        # histo.Scale(1.0 / ry_trigger[(iPtCand, iPtHad)] if ry_trigger[(iPtCand, iPtHad)] != 0 else 1.0)
-        histo.Write('hPairsYields_vs_DeltaPhi')
-        # save ry_trigger as a 1-bin histogram in the same directory
-        ry, ry_unc = ry_trigger.get((iPtCand, iPtHad), (0.0, 0.0))
-        hRy = TH1D("ry_trigger", "ry_trigger", 1, 0., 1.)
-        hRy.SetBinContent(1, ry)
-        hRy.SetBinError(1, ry_unc)
-        hRy.Write()
-    outROOT.Close()
 
 if __name__ == "__main__":
     multiprocessing.set_start_method('spawn', force=True)
