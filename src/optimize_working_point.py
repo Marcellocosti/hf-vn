@@ -43,52 +43,6 @@ def build_axis_idx(merged):
         idx[TITLE_TO_NAME.get(title, title)] = i
     return idx
 
-# Returns the merged sparse from the job files
-def load_merged_sparse(job_files, obj_path, n_jobs):
-    files = sorted(job_files)
-    if n_jobs < len(files):
-        files = files[:n_jobs]
-    else:
-        logger("Only a subset of the available statistics is to be used for Working Point opt!", "FATAL")
-    merged = None
-    for job_file in files:
-        root_file = TFile.Open(job_file)
-        sparse = root_file.Get(obj_path)
-        if not sparse:
-            root_file.Close()
-            continue
-        merged = sparse.Clone("merged_sparse") if merged is None else (merged.Add(sparse), merged)[1]
-        root_file.Close()
-    return merged, files
-
-# Builds the selections to scan: 
-# - Sequential thresholds [x, 1]
-# - Slices [edges[i], edges[i+1]]
-def build_scan(axis_cfg, i_pt):
-    strategy = axis_cfg.get('strategy', 'sequential')
-    if strategy == 'slices':
-        edges = axis_cfg['edges']
-        edges = edges[i_pt] if isinstance(edges[0], list) else edges
-        return list(zip(edges[:-1], edges[1:]))
-
-    low_lims = axis_cfg.get('min', 0.0)
-    low_lims = low_lims[i_pt] if isinstance(low_lims, list) else low_lims
-    upper_lims = axis_cfg['max']
-    upper_lims = upper_lims[i_pt] if isinstance(upper_lims, list) else upper_lims
-    n_steps = axis_cfg.get('nsteps', 5)
-    n_steps = n_steps[i_pt] if isinstance(n_steps, list) else n_steps
-    if low_lims <= 0:
-        return [(k + 1) * upper_lims / n_steps for k in range(n_steps)]
-    return [float(v) for v in np.linspace(low_lims, upper_lims, n_steps)]
-
-# Formats scan values
-def format_scores(vals):
-    if len(vals) > 1:
-        span = min((b - a) for a, b in zip(sorted(vals), sorted(vals)[1:]))
-    else:
-        span = vals[0] if vals else 1.0
-    dec = max(0, min(4, -int(np.floor(np.log10(span)))))
-    return [f"{v:.{dec}f}" for v in vals]
 
 # Gets peak mean and width from the fit result parameters
 def get_mean_sigma(fitter):
@@ -106,6 +60,81 @@ def get_mean_sigma(fitter):
             sigma = float(val)
     return mean, sigma
 
+
+# Returns the merged sparse from the job files
+def load_merged_sparse(job_files, obj_path, n_jobs):
+    files = sorted(job_files)
+    if n_jobs < len(files):
+        files = files[:n_jobs]
+    else:
+        logger("Only a subset of the available statistics is to be used for Working Point opt!", "FATAL")
+    merged = None
+    for job_file in files:
+        root_file = TFile.Open(job_file)
+        sparse = root_file.Get(obj_path)
+        if not sparse:
+            root_file.Close()
+            continue
+        merged = sparse.Clone("merged_sparse") if merged is None else (merged.Add(sparse), merged)[1]
+        root_file.Close()
+
+    return merged, files
+
+
+# Builds the selections to scan: 
+# - Sequential thresholds [x, 1]
+# - Slices [edges[i], edges[i+1]]
+def build_scan(axis_cfg, i_pt, axis_edges):
+
+    strategy = axis_cfg['strategy']
+
+    if strategy == 'slices':
+        edges = axis_cfg['edges']
+        edges = edges[i_pt] if isinstance(edges[0], list) else edges
+        return list(zip(edges[:-1], edges[1:]))
+
+    elif strategy == 'sequential':
+
+        low_lims = axis_cfg['min']
+        low_lims = low_lims[i_pt] if isinstance(low_lims, list) else low_lims
+        upper_lims = axis_cfg['max']
+        upper_lims = upper_lims[i_pt] if isinstance(upper_lims, list) else upper_lims
+        
+        # Pick n_steps values among the axis_edges
+        # Keep only edges within the requested range
+        valid_edges = np.asarray(axis_edges)[
+            (np.asarray(axis_edges) >= low_lims) &
+            (np.asarray(axis_edges) <= upper_lims)
+        ]
+
+        n_steps = axis_cfg['nsteps'][i_pt] if isinstance(axis_cfg['nsteps'], list) else axis_cfg['nsteps']
+        if n_steps == 'all':
+            return valid_edges[1:]  # all bin edges, except the first one
+
+        if n_steps >= len(valid_edges):
+            return valid_edges.tolist()
+
+        # Pick approximately equally spaced indices
+        idx = np.linspace(0, len(valid_edges) - 1, n_steps)
+        idx = np.round(idx).astype(int)
+
+        return valid_edges[idx].tolist()
+
+    else:
+        logger(f"Unknown scan strategy '{strategy}'", "FATAL")
+        return []
+
+
+# Formats scan values
+def format_scores(vals):
+    if len(vals) > 1:
+        span = min((b - a) for a, b in zip(sorted(vals), sorted(vals)[1:]))
+    else:
+        span = vals[0] if vals else 1.0
+    dec = max(0, min(4, -int(np.floor(np.log10(span)))))
+    return [f"{v:.{dec}f}" for v in vals]
+
+
 # Scans the grid, fits the mass at each point, saves the plots (2D significance map, QA hists)
 def process_pt_bin(args):
     cfg, i_pt, pt_min, pt_max, minimizer, debug = args
@@ -118,13 +147,7 @@ def process_pt_bin(args):
     obj_path = f"{sparse_name}/hSparse{sparse_name}"
     sgn_label = fit_cfg.get('SgnFuncLabel', dmeson)
 
-    scan = wp_cfg['scan']
-    scan_var_x, scan_var_y = list(scan.keys())
-    scan_x = build_scan(scan[scan_var_x], i_pt)
-    scan_y = build_scan(scan[scan_var_y], i_pt)
-
-    fd_strategy = scan[scan_var_y].get('strategy', 'sequential')
-
+    # Retrieve input file
     pt_str = f"pt_{int(pt_min*10)}_{int(pt_max*10)}"
     job_glob = f"{cfg['outdir']}/preprocess/{pt_str}/{input_dir}/jobs/AnalysisResults_*.root"
     job_files = glob.glob(job_glob)
@@ -138,17 +161,33 @@ def process_pt_bin(args):
     if merged is None:
         return None
 
-    axis_idx = build_axis_idx(merged)
-    for need in (scan_var_x, scan_var_y, 'Mass'):
-        if need not in axis_idx:
-            logger(f"Axis '{need}' not in sparse titles {list(axis_idx)} for {pt_str}", "ERROR")
-            return None
-
+    # Dump used files to a text file
     out_dir_pt = f"{cfg['outdir']}/working_point_{cfg['suffix']}/{pt_str}"
     os.makedirs(out_dir_pt, exist_ok=True)
     with open(f"{out_dir_pt}/used_jobs.txt", "w") as jobs_file:
         jobs_file.write("\n".join(used_files) + "\n")
 
+    # Build lists of scan values, depending on the strategy
+    axis_idx = build_axis_idx(merged)
+    scan = wp_cfg['scan']
+    scan_var_x, scan_var_y = list(scan.keys())
+    for need in (scan_var_x, scan_var_y, 'Mass'):
+        if need not in axis_idx:
+            logger(f"Axis '{need}' not in sparse titles {list(axis_idx)} for {pt_str}", "ERROR")
+            return None
+
+    axis_x = merged.GetAxis(axis_idx[scan_var_x])
+    edges_x = [axis_x.GetBinLowEdge(i) for i in range(1, axis_x.GetNbins() + 1)]
+    edges_x.append(axis_x.GetBinUpEdge(axis_x.GetNbins()))
+    scan_x = build_scan(scan[scan_var_x], i_pt, edges_x)
+
+    axis_y = merged.GetAxis(axis_idx[scan_var_y])
+    edges_y = [axis_y.GetBinLowEdge(i) for i in range(1, axis_y.GetNbins() + 1)]
+    edges_y.append(axis_y.GetBinUpEdge(axis_y.GetNbins()))
+    scan_y = build_scan(scan[scan_var_y], i_pt, edges_y)
+
+    # Labels
+    fd_strategy = scan[scan_var_y].get('strategy', 'sequential')
     nx, ny = len(scan_x), len(scan_y)
     xlabels = format_scores(scan_x)
     if fd_strategy == 'slices':
@@ -156,6 +195,7 @@ def process_pt_bin(args):
     else:
         ylabels = format_scores(scan_y)
     y_axis_label = f"{scan_var_y} slice" if fd_strategy == 'slices' else f"{scan_var_y} min"
+
     h_signif = TH2D(f"h_signif_{pt_str}", f"Significance {pt_str};{scan_var_x} max;{y_axis_label}", nx, 0, nx, ny, 0, ny)
     h_mean = TH2D(f"h_mean_{pt_str}", f"Mass mean {pt_str};{scan_var_x} max;{y_axis_label}", nx, 0, nx, ny, 0, ny)
     h_sigma = TH2D(f"h_sigma_{pt_str}", f"Mass sigma {pt_str};{scan_var_x} max;{y_axis_label}", nx, 0, nx, ny, 0, ny)
