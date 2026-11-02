@@ -9,6 +9,7 @@ import sys
 import yaml
 import numpy as np
 import array
+import subprocess
 from ROOT import TFile, TObject
 import argparse
 import gc
@@ -161,7 +162,7 @@ def process_sparse(i_file, infile_path, full_cfg, sparse_cfg, prep_out_dir, inpu
     for i_pt, (pt_min, pt_max, bkg_max) in enumerate(zip(pt_mins, pt_maxs, bkg_maxs)):
         logger(f"Processing pT bin {pt_min} - {pt_max} with bkg max {bkg_max}", level='INFO')
         # Create output file
-        out_file_dir = f"{prep_out_dir}/preprocess/pt_{int(pt_min*10)}_{int(pt_max*10)}/{input_out_dir}"
+        out_file_dir = f"{prep_out_dir}/preprocess/pt_{int(pt_min*100)}_{int(pt_max*100)}/{input_out_dir}"
         os.makedirs(out_file_dir, exist_ok=True)
         out_file_path = f'{out_file_dir}/AnalysisResults_{i_file}.root'
         out_file, write_opt = check_existing_outputs(out_file_path)
@@ -259,7 +260,7 @@ def process_tree(i_file, infile_path, full_cfg, trees_cfg, prep_out_dir, input_o
 
     try:
         for pt_min, pt_max, bkg_max in zip(pt_mins, pt_maxs, bkg_maxs):
-            out_file_dir = f"{prep_out_dir}/preprocess/pt_{int(pt_min*10)}_{int(pt_max*10)}/{input_out_dir}"
+            out_file_dir = f"{prep_out_dir}/preprocess/pt_{int(pt_min*100)}_{int(pt_max*100)}/{input_out_dir}"
             os.makedirs(out_file_dir, exist_ok=True)
             out_file_path = f'{out_file_dir}/AO2D_{i_file}.root'
 
@@ -294,69 +295,72 @@ def process_tree(i_file, infile_path, full_cfg, trees_cfg, prep_out_dir, input_o
         logger(f"Caught Python exception while saving snapshot: {e}", "ERROR")
 
 def get_input_paths(input_cfg, input_type):
-    print(f"input_cfg: {input_cfg}")
-    if isinstance(input_cfg, str) and input_cfg.endswith(".txt"):
-        return input_cfg
+
     if isinstance(input_cfg, str):
-        dir_path = input_cfg
-        file_paths = [f"{dir_path}/{file}" for file in os.listdir(dir_path) \
-                      if file.endswith(".root") and input_type in file]
-        return file_paths
+        # files: "/path/to/txt/file/with/.root/file/paths.txt"
+        if input_cfg.endswith(".txt"):
+            with open(input_cfg, 'r') as f:
+                file_paths = [line.strip() for line in f if line.strip()]
+        # files: "file.root"
+        elif input_cfg.endswith(".root"):
+            file_paths = [input_cfg]
+        # files: "/path/to/directory", all .root files in the directory will be used
+        elif os.path.isdir(input_cfg['files']):
+            dir_path = input_cfg['files']
+            file_paths = [f"{dir_path}/{file}" for file in os.listdir(dir_path) 
+                          if file.endswith(".root") and input_type in file]
+        else:
+            logger("Invalid type for 'files' in configuration. Must be a string (directory) or list of file paths.", "ERROR")
+            sys.exit(1)
+
+    # files: ["file1.root", "file2.root", ...]
     elif isinstance(input_cfg, list):
         file_paths = input_cfg
-        return file_paths
+
     else:
         logger("Invalid type for 'files' in configuration. Must be a string (directory) or list of file paths.", "ERROR")
         sys.exit(1)
+
+    return file_paths
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Arguments")
     parser.add_argument('config', metavar='text', default='config.yml', help='configuration file')
     parser.add_argument("--workers", "-w", type=int, default=1, help="number of workers")
+    parser.add_argument("--merge", "-m", action="store_true", default=False, help="merge the results in the directories for the different pT bins")
     args = parser.parse_args()
 
     with open(args.config, 'r') as cfg_pre:
         full_cfg = yaml.safe_load(cfg_pre)
 
     output_dir = full_cfg['outdirPrep'] if full_cfg.get("outdirPrep") else full_cfg['outdir']
-    for input_cfg in full_cfg['preprocess']['inputs']:
-        if isinstance(input_cfg['files'], str) and not input_cfg['files'].endswith(".txt"):
-            dir_path = input_cfg['files']
-            file_paths = [f"{dir_path}/{file}" for file in os.listdir(dir_path) if file.endswith(".root")]
-        elif isinstance(input_cfg['files'], str) and input_cfg['files'].endswith(".txt"):
-            with open(input_cfg['files'], 'r') as f:
-                file_paths = [line.strip() for line in f if line.strip()]
-        elif isinstance(input_cfg['files'], list):
-            file_paths = input_cfg['files']
-        else:
-            logger("Invalid type for 'files' in configuration. Must be a string (directory) or list of file paths.", "ERROR")
-            continue
+    if not args.merge:
+        for input_cfg in full_cfg['preprocess']['inputs']:
 
-        if input_cfg.get('sparses'):
-            if isinstance(input_cfg['files'], str) and not input_cfg['files'].endswith(".txt"):
+            if input_cfg.get('sparses'):
                 file_paths = get_input_paths(input_cfg['files'], "AnalysisResults")
-            for sparse_cfg in input_cfg['sparses']:
-                logger(f"##### Skimming {sparse_cfg['name']} #####", "WARNING")
+                for sparse_cfg in input_cfg['sparses']:
+                    logger(f"##### Skimming {sparse_cfg['name']} #####", "WARNING")
+                    with concurrent.futures.ThreadPoolExecutor(args.workers) as executor:
+                        tasks_sparses = [executor.submit(process_sparse, i_file, file, full_cfg, sparse_cfg, output_dir, f"{input_cfg['outdir']}/jobs") for i_file, file in enumerate(file_paths)]
+
+            elif input_cfg.get('trees'):
+                logger(f"##### Skimming {input_cfg} trees #####", "INFO")
+                file_paths = get_input_paths(input_cfg['files'], "AO2D")
                 with concurrent.futures.ThreadPoolExecutor(args.workers) as executor:
-                    tasks_sparses = [executor.submit(process_sparse, i_file, file, full_cfg, sparse_cfg, output_dir, f"{input_cfg['outdir']}/jobs") for i_file, file in enumerate(file_paths)]
+                    tasks_trees = [executor.submit(process_tree, i_file, file_path, full_cfg, input_cfg, output_dir, f"{input_cfg['outdir']}/jobs") for i_file, file_path in enumerate(file_paths)]
 
-        elif input_cfg.get('trees'):
-            logger(f"##### Skimming {input_cfg} trees #####", "INFO")
-            file_paths = get_input_paths(input_cfg['files'], "AO2D")
-            with concurrent.futures.ThreadPoolExecutor(args.workers) as executor:
-                tasks_trees = [executor.submit(process_tree, i_file, file_path, full_cfg, input_cfg, output_dir, f"{input_cfg['outdir']}/jobs") for i_file, file_path in enumerate(file_paths)]
+            else:
+                logger("No sparses or trees found in the configuration for pre-processing", "ERROR")
 
-        else:
-            logger("No sparses or trees found in the configuration for pre-processing", "ERROR")
+            # Dump file_paths used
+            dump_file_paths = f"{output_dir}/preprocess/file_paths_{input_cfg['outdir']}.txt"
+            os.makedirs(os.path.dirname(dump_file_paths), exist_ok=True)
+            with open(dump_file_paths, "w") as dump_file:
+                for file_path in file_paths:
+                    dump_file.write(f"{file_path}\n")
 
-        # Dump file_paths used
-        dump_file_paths = f"{output_dir}/preprocess/file_paths_{input_cfg['outdir']}.txt"
-        os.makedirs(os.path.dirname(dump_file_paths), exist_ok=True)
-        with open(dump_file_paths, "w") as dump_file:
-            for file_path in file_paths:
-                dump_file.write(f"{file_path}\n")
-
-        logger(f"Finished processing {input_cfg['outdir']}\n\n", "INFO")
+            logger(f"Finished processing {input_cfg['outdir']}\n\n", "INFO")
 
     # use hadd to merge the results in the directories for the different pT bins
     for pt_dir in os.listdir(f"{output_dir}/preprocess/"):
@@ -376,8 +380,8 @@ if __name__ == "__main__":
             hadd = f"hadd -f {merged_file} @{filelist_path} > {log_merge}"
             logger(f"Running command: {hadd}\n\n", "INFO")
             try:
-                os.system(f"cd {prep_dir} && {hadd}")
+                subprocess.run(f"cd {prep_dir} && {hadd}", shell=True, check=True)
             except Exception as e:
                 logger(f"Error while creating hadd command: {e}", "ERROR")
-                os.system(f"rm {merged_file}") # Remove the partially merged file
-                os.system(f"mv {log_merge} {prep_dir}/log_merge_error.txt")
+                subprocess.run(f"cd {prep_dir} && rm {merged_file}", shell=True) # Remove the partially merged file
+                subprocess.run(f"cd {prep_dir} && mv {log_merge} {prep_dir}/log_merge_error.txt", shell=True)
