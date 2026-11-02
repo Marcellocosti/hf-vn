@@ -56,8 +56,44 @@ if __name__ == "__main__":
     parser.add_argument('cfgFileName', metavar='text', default='cfg_prepare_inputs.yml', help='config file name for ml')
     args = parser.parse_args()
 
-    _, (cent_min, cent_max) = get_centrality_bins(args.cent_class)
-    if args.data != "AO2D_data.root":
-        converter(args.data, args.table, cent_min, cent_max, queries=["fM > 1.6 and fM < 2.5"], labels=["data"])
-    if args.mc != "AO2D_mc.root":
-        converter(args.mc, args.table, cent_min, cent_max, queries=["fM > 1.6 and fM < 2.5 and fOriginMcRec == 1", "fM > 1.6 and fM < 2.5 and fOriginMcRec == 2"], labels=["prompt", "fd"])
+    print('Loading analysis configuration: ...', end='\r')
+    with open(args.cfgFileName, 'r') as ymlCfgFile:
+        cfg = yaml.load(ymlCfgFile, yaml.FullLoader)
+    print('Loading analysis configuration: Done!')
+
+    data_file_path = cfg['data']
+    mc_prompt_file_path = cfg['mc_prompt']
+    mc_fd_file_path = cfg['mc_fd']
+    cent_class = cfg.get('cent_class', None)
+    table = cfg['table']
+    cols = cfg.get('cols_to_keep', None)
+    common_query = cfg.get('common_query', '').strip()
+
+    # Append centrality
+    if cent_class is not None:
+        _, (cent_min, cent_max) = get_centrality_bins(cent_class)
+        cent_str = f"fCentrality >= {cent_min} and fCentrality < {cent_max}"
+        common_query = f"{common_query} and {cent_str}" if common_query else cent_str
+
+    # prompt
+    print(f"\n\n----> Preparing prompt mc parquet file from {mc_prompt_file_path} for table {table} with query: {common_query}")
+    prompt_part = cfg.get('prompt_query', '').strip()
+    if common_query and prompt_part:
+        prompt_query = f"{common_query} and {prompt_part}"
+    else:
+        prompt_query = common_query or prompt_part
+    converter(mc_prompt_file_path, table, query=prompt_query, cols_to_keep=cols, cols_to_add=cfg.get('extend_cols', []), label='mc_prompt')
+
+    # fd
+    print(f"\n\n----> Preparing fd mc parquet file from {mc_fd_file_path} for table {table} with query: {common_query}")
+    fd_part = cfg.get('fd_query', '').strip()
+    if common_query and fd_part:
+        fd_query = f"{common_query} and {fd_part}"
+    else:
+        fd_query = common_query or fd_part
+    converter(mc_fd_file_path, table, query=fd_query, cols_to_keep=cols, cols_to_add=cfg.get('extend_cols', []), label='mc_fd')
+
+    print(f"\n\n----> Preparing data parquet file from {data_file_path} for table {table} with query: {common_query}")
+    converter(data_file_path, table, query=common_query, cols_to_keep=cols, cols_to_add=cfg.get('extend_cols', []), label='data')
+
+    # Now prepare plots of all columns in the parquet files, comparing data and mc, and save them in a multi-page pdf file
