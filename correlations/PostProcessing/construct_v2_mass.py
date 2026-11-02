@@ -22,7 +22,6 @@ import numpy as np
 import yaml
 import pathlib as PATH
 import ROOT
-from ROOT import TFile
 
 script_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(script_dir, '../../', 'utils'))
@@ -65,18 +64,14 @@ def build_mass_v2(cfg_path):
         return
 
     extract_dir = outdir / f"CorrelExtract_{suffix}"
-    v2_h = float(config.get("v2DeltaHH", 0.07))
 
     inv_mass_path = outdir / "InvMass" / "InvMassVsPt.root"
     final_plots_path = (extract_dir / "CorrelationFitResults"
                         / "Output_CorrelationFitting_Root"
-                        / f"CorrPhi{config['Dmeson']}_FinalPlots.root")
-    if not inv_mass_path.exists():
-        print(f"[ERROR] {inv_mass_path} not found")
-        sys.exit(1)
-    if not final_plots_path.exists():
-        print(f"[ERROR] {final_plots_path} not found")
-        sys.exit(1)
+                        / f"CorrPhi{meson}_FinalPlots.root")
+    
+    if not inv_mass_path.exists(): logger(f"{inv_mass_path} not found", level="FATAL")
+    if not final_plots_path.exists(): logger(f"{final_plots_path} not found", level="FATAL")
 
     pt_bins_cand = [float(ptBinCand) for ptBinCand in config["ptBinsCand"]]
     pt_bins_had  = [float(ptBinHad) for ptBinHad in config["ptBinsHad"]]
@@ -130,7 +125,7 @@ def build_mass_v2(cfg_path):
                     h_mass_vs_v2.SetBinError(i_ml+1, hv.GetBinError(i_pt_cand+1))
                 else:
                     print(f"  [WARNING] {hn} not found in FinalPlots — skipping mass bin {i_ml+1} for ptCand {i_pt_cand}")
-            h_mass_vs_v2.Scale(1.0 / v2_h)
+            h_mass_vs_v2.Scale(1.0 / v2_hh)
             h_mass_vs_v2s.append(h_mass_vs_v2)
 
         out_path = out_mass_v2_dir / f"InvMassVsV2_{pt_had_str}.root"
@@ -224,9 +219,6 @@ def extract_ry_trigger(cfg_path):
         fitter.set_name(f"rytrigger_pc{i_pt_cand}")
         fitter.set_rebin(rebin)
         fitter.set_data_to_fit_hist(h_mass_temp)
-        debug_file = TFile.Open(f"{extract_dir}/ry_trigger_debug_pc{i_pt_cand}.root", "RECREATE")
-        h_mass_temp.Write("h_mass_temp")
-        debug_file.Close()
         fitter.setup()
         fitter.fit()
         fitter.plot_fit(logy=False, path=str(extract_dir / f"ry_trigger_fit_pc{i_pt_cand}.png"), show_extra_info=False)
