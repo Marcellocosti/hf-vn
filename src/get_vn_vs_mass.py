@@ -212,16 +212,20 @@ def get_vn_vs_mass(fitConfigFileName, cutsetFileName, inFileName, batch, isMulti
     hRefl, hMass, hMassForFit, hVn, hVnForFit, fTotFuncMass,\
     fTotFuncVn, fSgnFuncMass, fBkgFuncMass, fMassBkgRflFunc,\
     fMassSecPeakFunc, fBkgFuncVn, fVnSecPeakFunc, fVnCompFuncts,\
-    hMCSgn, hMCRefl, hPulls, hParsMCPrefit, hParsSignalFunc, hParsSimFit = ([] for _ in range(20))
+    hMCSgn, hMCRefl, hPulls, hParsMCPrefit, hParsSignalFunc, \
+    hParsSimFit, hSgnFuncHist = ([] for _ in range(21))
 
     useTemplates = True if config.get('corr_bkgs') else False
-    def get_corr_bkg_file_path(pt_dir):
+    def get_corr_bkg_file_path(pt_dir, isMultitrial=False, custom_dir=None):
         prefix = (config.get('corr_bkgs') or {}).get('templs_prefix')
+        if custom_dir is not None:
+            return f"{custom_dir}/templs_{pt_dir}.root"
         if prefix:
             return f"{prefix}_{pt_dir}.root"
         if 'bkg_' in config['outdir'] or isMultitrial:
             return f"{config['outdir'].split('syst')[0]}/../corrbkgs/templs_{pt_dir}.root"
         return f"{config['outdir']}/corrbkgs/templs_{pt_dir}.root"
+
     fMassTemplFuncts = [None]*nPtBins if useTemplates else []
 
     templ_all_chns = []
@@ -239,8 +243,8 @@ def get_vn_vs_mass(fitConfigFileName, cutsetFileName, inFileName, batch, isMulti
     templColors = {c: TEMPL_COLOR_CYCLE[i % len(TEMPL_COLOR_CYCLE)] for i, c in enumerate(templ_all_chns)}
 
     for iPt, (ptMin, ptMax) in enumerate(zip(ptmins, ptmaxs)):
-        hMass.append(infile.Get(f'pt_{ptMin*10:.0f}_{ptMax*10:.0f}/hMassData'))
-        hVn.append(infile.Get(f'pt_{ptMin*10:.0f}_{ptMax*10:.0f}/hVnVsMassData'))
+        hMass.append(infile.Get(f'pt_{ptMin*100:.0f}_{ptMax*100:.0f}/hMassData'))
+        hVn.append(infile.Get(f'pt_{ptMin*100:.0f}_{ptMax*100:.0f}/hVnVsMassData'))
 
         hMass[iPt].SetDirectory(0)
         hVn[iPt].SetDirectory(0)
@@ -320,6 +324,7 @@ def get_vn_vs_mass(fitConfigFileName, cutsetFileName, inFileName, batch, isMulti
     SetObjectStyle(gVnUncSecPeak, color=kRed, markerstyle=kOpenCircle)
     hTemplFracs = {}
     hTempls = {}
+    templsInfos = {}
 
     # Create canvases
     cSimFit = []
@@ -343,7 +348,7 @@ def get_vn_vs_mass(fitConfigFileName, cutsetFileName, inFileName, batch, isMulti
     pullLines = []
     for iPt, (hM, hV, ptMin, ptMax, reb, sgnEnum, bkgEnum, bkgVnEnum, secPeak, massMin, massMax) in enumerate(
             zip(hMass, hVn, ptmins, ptmaxs, rebins, SgnFunc, BkgFunc, BkgFuncVn, inclSecPeak, massFitLows, massFitHighs)):
-        pt_dir = f"pt_{ptMin*10:.0f}_{ptMax*10:.0f}"
+        pt_dir = f"pt_{ptMin*100:.0f}_{ptMax*100:.0f}"
         hMassForFit.append(TH1F())
         hVnForFit.append(TH1F())
         RebinHisto(hM, reb, not isMultitrial).Copy(hMassForFit[iPt]) #to cast TH1D to TH1F
@@ -358,7 +363,7 @@ def get_vn_vs_mass(fitConfigFileName, cutsetFileName, inFileName, batch, isMulti
         hVnForFit[iPt].GetXaxis().SetTitle(massAxisTit)
         hVnForFit[iPt].GetYaxis().SetTitle(f'#it{{v}}_{{{harmonic}}}')
         binWidth = hMassForFit[iPt].GetBinWidth(1)
-        hMassForFit[iPt].SetTitle((f'{ptMin:0.1f} < #it{{p}}_{{T}} < {ptMax:0.1f} GeV/#it{{c}};{massAxisTit};'
+        hMassForFit[iPt].SetTitle((f'{ptMin:0.2f} < #it{{p}}_{{T}} < {ptMax:0.2f} GeV/#it{{c}};{massAxisTit};'
                                    f'Counts per {binWidth*1000:.0f} MeV/#it{{c}}^{{2}}'))
         hMassForFit[iPt].SetName(f'MassForFit{iPt}')
         SetObjectStyle(hMassForFit[iPt], color=kBlack, markerstyle=kFullCircle, markersize=1)
@@ -367,7 +372,7 @@ def get_vn_vs_mass(fitConfigFileName, cutsetFileName, inFileName, batch, isMulti
         if not isMultitrial:
             logger(f'Processing pt {ptMin} - {ptMax} GeV/c', level='INFO')
         fitName = f'VnVsMassFit_pt_{ptMin}_{ptMax}_cutset_{cfg_cutset["icutset"]}'
-        vnFitter.append(VnVsMassFitter(fitName, hMassForFit[iPt], hVnForFit[iPt],
+        vnFitter.append(VnVsMassFitter(fitName, particleName, hMassForFit[iPt], hVnForFit[iPt],
                                        massMin, massMax, bkgEnum, sgnEnum, bkgVnEnum,
                                        isMultitrial))
 
@@ -423,58 +428,75 @@ def get_vn_vs_mass(fitConfigFileName, cutsetFileName, inFileName, batch, isMulti
         useTemplatesPtBin = False
         hTemplFracs[pt_dir] = None
         hTempls[pt_dir] = None
+        templsInfos[pt_dir] = {}
         templ_chn_names = []
         cfg_corr_bkgs = config.get('corr_bkgs', None)
+        cocktail_cfg = None
         if cfg_corr_bkgs:
             for cocktail in cfg_corr_bkgs['cocktails']:
                 if [ptMin, ptMax] in cocktail['pt_ranges']:
                     useTemplatesPtBin = True
                     cocktail_cfg = cocktail
                     hTemplFracs[pt_dir] = TH1D('hTemplFracs', f';;Templ / Sgn', len(cocktail_cfg['channels']), 0, len(cocktail_cfg['channels']))
+                    templsInfos[f'hist_templ_fracs_{pt_dir}'] = TH1D(f'hTemplFracs_{pt_dir}', f';;Templ / Sgn', len(cocktail_cfg['channels']), 0, len(cocktail_cfg['channels']))
+                    templsInfos[f'hist_templ_n_entries_{pt_dir}'] = TH1D(f'hTemplNEntries_{pt_dir}', f'Tree entries after selection;Channel;Entries', len(cocktail_cfg['channels']), 0, len(cocktail_cfg['channels']))
                     break
 
         if useTemplatesPtBin:
-            templates = {}
             hTempls[pt_dir] = {}
-            if isMultitrial or "syst/multitrial/fit" in config['outdir']:
-                raw_yields_file_path_ref = f"{config['outdir'].split('syst')[0]}/raw_yields/raw_yields_0{cfg_cutset['icutset']}.root"
-                get_corr_bkgs_from_reference(templates, raw_yields_file_path_ref, pt_dir, massMin, massMax, reb)
-                for i_chn, (chn, chn_info) in enumerate(templates.items()):
-                    hTempls[pt_dir][f"{chn}_rebin_mass_sel"] = chn_info['histo']
-                    hTemplFracs[pt_dir].GetXaxis().SetBinLabel(i_chn+1, chn)
-                    hTemplFracs[pt_dir].SetBinContent(i_chn+1, chn_info['frac'] * configfit.get('TemplatesNorm', 1.0))
-            else:
-                corr_bkg_file_path = get_corr_bkg_file_path(pt_dir)
-                logger(f"Retrieving correlated bkg templates from {corr_bkg_file_path} for pt {ptMin} - {ptMax} GeV/c ...", "INFO")
-                corr_bkg_file = TFile.Open(corr_bkg_file_path, 'r')
-                sel_string = f"fMlScore0 < {cfg_cutset['ScoreBkg']['max'][iPt]} && fMlScore1 > {cfg_cutset['ScoreFD']['min'][iPt]}" \
-                             f" && fMlScore1 < {cfg_cutset['ScoreFD']['max'][iPt]} && fM > {massMin} && fM < {massMax}"
-                sgn_hist, sgn_frac = get_corr_bkg(corr_bkg_file, cfg_corr_bkgs['sgn_chn'], sel_string, pt_dir, "raw", "hist", verbose=True)
-                for i_chn, chn in enumerate(cocktail_cfg['channels']):
-                    templates[chn] = {}
-                    logger(f"Getting correlated bkg template for channel {chn} ...", "INFO")
-                    histo, frac = get_corr_bkg(corr_bkg_file, chn, sel_string, pt_dir, "raw", "hist",
-                                               corr_abundances=configfit.get('CorrectAbundances', False),
-                                               sgn_d_meson=config['Dmeson'],
-                                               verbose=True)
-                    histo.SetDirectory(0)
-                    hTempls[pt_dir][chn] = histo
-                    # Restrict histogram to fit range and rebin (reb)
-                    histo_rebin_mass_range = get_rebinned_mass_sel_histo(histo, massMin, massMax, reb)
-                    templates[chn]['histo'] = histo_rebin_mass_range
-                    hTempls[pt_dir][f"{chn}_rebin_mass_sel"] = histo_rebin_mass_range
-                    logger(f"[icutset = {cfg_cutset['icutset']}] Setting channel {chn} frac to (frac / sgn_frac): {frac} / {sgn_frac}", "INFO")
-                    templates[chn]['frac'] = (frac / sgn_frac)  # option to apply an additional scaling to the fraction from config, if needed for systematics
-                    hTemplFracs[pt_dir].GetXaxis().SetBinLabel(i_chn+1, chn)
-                    hTemplFracs[pt_dir].SetBinContent(i_chn+1, (frac / sgn_frac) * configfit.get('TemplatesNorm', 1.0))
+            templsInfos[pt_dir]['bkgs'] = {}
+            templsInfos[pt_dir]['empty_bkgs'] = {}
 
-                corr_bkg_file.Close()
+            corr_bkg_file_path = get_corr_bkg_file_path(pt_dir, isMultitrial, cfg_corr_bkgs.get('templ_dir', None))
+            logger(f"Retrieving correlated bkg templates from {corr_bkg_file_path} for pt {ptMin} - {ptMax} GeV/c ...", "INFO")
+            corr_bkg_file = TFile.Open(corr_bkg_file_path, 'r')
+            sel_string = f"fMlScore0 < {cfg_cutset['ScoreBkg']['max'][iPt]} && fMlScore1 > {cfg_cutset['ScoreFD']['min'][iPt]} && " \
+                         f"fMlScore1 < {cfg_cutset['ScoreFD']['max'][iPt]} && fM > {massMin} && fM < {massMax}"
+            sgn_hist, sgn_frac, sgn_n_entries, proj_histos_sgn = get_corr_bkg(corr_bkg_file, cfg_corr_bkgs['sgn_chn'], sel_string, pt_dir, "raw", "hist", verbose=True)
+            templsInfos[pt_dir][cfg_corr_bkgs['sgn_chn']] = {}
+            templsInfos[pt_dir][cfg_corr_bkgs['sgn_chn']]['histo'] = sgn_hist
+            templsInfos[pt_dir][cfg_corr_bkgs['sgn_chn']]['frac'] = sgn_frac
+            templsInfos[pt_dir][cfg_corr_bkgs['sgn_chn']]['n_entries'] = sgn_n_entries
+            templsInfos[pt_dir][cfg_corr_bkgs['sgn_chn']]['proj_cols'] = proj_histos_sgn
+
+            for i_chn, chn in enumerate(cocktail_cfg['channels']):
+                logger(f"Getting correlated bkg template for channel {chn} ...", "INFO")
+                histo, frac, n_entries, proj_histos = get_corr_bkg(corr_bkg_file, chn, sel_string, pt_dir, "raw", "hist",
+                                                                   project=not isMultitrial,
+                                                                   corr_abundances=configfit.get('CorrectAbundances', False),
+                                                                   sgn_d_meson=config['Dmeson'],
+                                                                   verbose=True)
+
+                templsInfos[f'hist_templ_fracs_{pt_dir}'].GetXaxis().SetBinLabel(i_chn+1, chn)
+                templsInfos[f'hist_templ_fracs_{pt_dir}'].SetBinContent(i_chn+1, (frac / sgn_frac) * configfit.get('TemplatesNorm', 1.0))
+                templsInfos[f'hist_templ_n_entries_{pt_dir}'].GetXaxis().SetBinLabel(i_chn+1, chn)
+                templsInfos[f'hist_templ_n_entries_{pt_dir}'].SetBinContent(i_chn+1, n_entries)
+
+                if n_entries <= 0:
+                    logger(f"Channel {chn} has no entries after selection for pt {ptMin} - {ptMax} GeV/c. Skipping this channel.", "WARNING")
+                    continue
+
+                if not chn in templsInfos[pt_dir]['bkgs']:
+                    templsInfos[pt_dir]['bkgs'][chn] = {}
+                histo.SetDirectory(0)
+                histo_rebin_mass_range = get_rebinned_mass_sel_histo(histo, massMin, massMax, reb)
+                logger(f"[icutset = {cfg_cutset['icutset']}] Setting channel {chn} frac to (frac / sgn_frac): {frac} / {sgn_frac}", "INFO")
+                templsInfos[pt_dir]['bkgs'][chn]["histo"] = histo
+                templsInfos[pt_dir]['bkgs'][chn]["frac"] = frac
+                templsInfos[pt_dir]['bkgs'][chn]["n_entries"] = n_entries
+                templsInfos[pt_dir]['bkgs'][chn]["proj_cols"] = proj_histos
+                print(f"[Chn {chn}] frac: {frac}, sgn_frac: {sgn_frac}, frac_to_sgn: {frac / sgn_frac}")
+                templsInfos[pt_dir]['bkgs'][chn]["frac_to_sgn"] = (frac / sgn_frac)
+                templsInfos[pt_dir]['bkgs'][chn]["hist_rebin_mass_sel"] = histo_rebin_mass_range
+
+            corr_bkg_file.Close()
 
             logger(f"Will further scale templates with factor {configfit.get('TemplatesNorm', 1.0)} from config for pt {ptMin} - {ptMax} GeV/c ...", "INFO")
-            vnFitter[iPt].SetTemplatesHisto([templ['histo'] for templ in templates.values()],
-                                            [templ['frac'] * configfit.get('TemplatesNorm', 1.0) for templ in templates.values()],
-                                            cfg_corr_bkgs.get('anchor_mode', 2))
-            templ_chn_names = list(templates.keys())
+            fracs = [templsInfos[pt_dir]['bkgs'][chn]['frac_to_sgn'] * configfit.get('TemplatesNorm', 1.0) for chn in templsInfos[pt_dir]['bkgs'].keys()]
+            print(f"fracs: {fracs}")
+            vnFitter[iPt].SetTemplatesHisto([templsInfos[pt_dir]['bkgs'][chn]['hist_rebin_mass_sel'] for chn in templsInfos[pt_dir]['bkgs'].keys()],
+                                            fracs, cfg_corr_bkgs.get('anchor_mode', 2))
+            templ_chn_names = list(templsInfos[pt_dir]['bkgs'].keys())
 
         # Initial fit parameters
         if configfit.get('InitFitPars'):
@@ -568,6 +590,7 @@ def get_vn_vs_mass(fitConfigFileName, cutsetFileName, inFileName, batch, isMulti
         fSgnFuncMass.append(None)
         fBkgFuncMass.append(None)
         fBkgFuncVn.append(None)
+        hSgnFuncHist.append(None)
         if isFitGood:
             secPeakMode = None
             if secPeak:
@@ -611,6 +634,9 @@ def get_vn_vs_mass(fitConfigFileName, cutsetFileName, inFileName, batch, isMulti
             fSgnFuncMass[iPt] = vnRes[iPt]['fSgnFuncMass']
             fBkgFuncMass[iPt] = vnRes[iPt]['fBkgFuncMass']
             fBkgFuncVn[iPt] = vnRes[iPt]['fBkgFuncVn']
+            hSgnFuncHist[iPt] = TH1F(f"hSgnFuncHist_{iPt}", "Signal function histogram", round((massMax - massMin)*1000), massMin, massMax)
+            for _ in range(5000000):
+                hSgnFuncHist[iPt].Fill(fSgnFuncMass[iPt].GetRandom())
 
             SetObjectStyle(fTotFuncMass[iPt], color=kAzure+4, linewidth=3)
             SetObjectStyle(fSgnFuncMass[iPt], fillcolor=kAzure-9, fillstyle=1001,
@@ -678,7 +704,9 @@ def get_vn_vs_mass(fitConfigFileName, cutsetFileName, inFileName, batch, isMulti
             fBkgFuncMass[iPt].Draw('same')
             fTotFuncMass[iPt].Draw('same')
 
-            legend = ROOT.TLegend(0.64, 0.46, 0.94, 0.84)
+
+            low_legend_y = 0.64 - 0.05*len(cocktail_cfg['channels']) if cocktail_cfg is not None else 0.64
+            legend = ROOT.TLegend(0.64, low_legend_y, 0.94, 0.84)
             legend.SetBorderSize(0)
             legend.SetFillStyle(0)
             legend.SetTextSize(0.028)
@@ -861,40 +889,44 @@ def get_vn_vs_mass(fitConfigFileName, cutsetFileName, inFileName, batch, isMulti
     outFile = TFile(f'{outFileName}.root', 'recreate')
 
     for iPt, (ptMin, ptMax) in enumerate(zip(ptmins, ptmaxs)):
-        make_dir_root_file(f'pt_{int(ptMin*10)}_{int(ptMax*10)}', outFile, not isMultitrial)
+        make_dir_root_file(f'pt_{int(ptMin*100)}_{int(ptMax*100)}', outFile, not isMultitrial)
     outFile.cd()
 
     for canv, (pt_min, pt_max) in zip(cSimFit, zip(ptmins, ptmaxs)):
         if canv:
-            outFile.cd(f'pt_{int(pt_min*10)}_{int(pt_max*10)}')
+            outFile.cd(f'pt_{int(pt_min*100)}_{int(pt_max*100)}')
             canv.Write()
     for hist, pt_min, pt_max in zip(hParsMCPrefit, ptmins, ptmaxs):
         if hist:
-            outFile.cd(f"pt_{int(pt_min*10)}_{int(pt_max*10)}")
+            outFile.cd(f"pt_{int(pt_min*100)}_{int(pt_max*100)}")
             hist.Write('hist_mc_prefit')
     for hist, pt_min, pt_max in zip(hParsSignalFunc, ptmins, ptmaxs):
         if hist:
-            outFile.cd(f"pt_{int(pt_min*10)}_{int(pt_max*10)}")
+            outFile.cd(f"pt_{int(pt_min*100)}_{int(pt_max*100)}")
             hist.Write('hist_signal_func')
     for hist, pt_min, pt_max in zip(hParsSimFit, ptmins, ptmaxs):
         if hist:
-            outFile.cd(f"pt_{int(pt_min*10)}_{int(pt_max*10)}")
+            outFile.cd(f"pt_{int(pt_min*100)}_{int(pt_max*100)}")
             hist.Write('hist_sim_fit')
     for hist, pt_min, pt_max in zip(hMass, ptmins, ptmaxs):
         if hist:
-            outFile.cd(f"pt_{int(pt_min*10)}_{int(pt_max*10)}")
+            outFile.cd(f"pt_{int(pt_min*100)}_{int(pt_max*100)}")
             hist.Write('hist_mass')
     for hist, pt_min, pt_max in zip(hVn, ptmins, ptmaxs):
         if hist:
-            outFile.cd(f"pt_{int(pt_min*10)}_{int(pt_max*10)}")
+            outFile.cd(f"pt_{int(pt_min*100)}_{int(pt_max*100)}")
             hist.Write('hist_vn')
     for hist, pt_min, pt_max in zip(hPulls, ptmins, ptmaxs):
         if hist:
-            outFile.cd(f"pt_{int(pt_min*10)}_{int(pt_max*10)}")
+            outFile.cd(f"pt_{int(pt_min*100)}_{int(pt_max*100)}")
             hist.Write('hist_pulls')
+    for hist, pt_min, pt_max in zip(hSgnFuncHist, ptmins, ptmaxs):
+        if hist:
+            outFile.cd(f"pt_{int(pt_min*100)}_{int(pt_max*100)}")
+            hist.Write('hist_sgn_func')
     for ipt, (ptmin, ptmax) in enumerate(zip(ptmins, ptmaxs)):
         try:
-            outFile.cd(f'pt_{int(ptmin*10)}_{int(ptmax*10)}')
+            outFile.cd(f'pt_{int(ptmin*100)}_{int(ptmax*100)}')
             fTotFuncMass[ipt].Write('fTotFuncMass')
             fTotFuncVn[ipt].Write('fTotFuncVn')
             fSgnFuncMass[ipt].Write('fSgnFuncMass')
@@ -903,18 +935,36 @@ def get_vn_vs_mass(fitConfigFileName, cutsetFileName, inFileName, batch, isMulti
             for bkgHisto in hVnBkgCoeffs[ipt]:
                 bkgHisto.Write(bkgHisto.GetName().rsplit('_', 1)[0])
         except:
-            logger(f'Fit function for pt {ptmin*10:.0f}-{ptmax*10:.0f} not available. Skipping.', level='WARNING')
+            logger(f'Fit function for pt {ptmin*100:.0f}-{ptmax*100:.0f} not available. Skipping.', level='WARNING')
 
-    for pt_dir, hTemplFrac in hTemplFracs.items():
-        make_dir_root_file(f"{pt_dir}/templs", outFile, not isMultitrial)
-        outFile.cd(f"{pt_dir}/templs/")
-        if hTemplFrac:
-            hTemplFrac.Write('hTemplFracs')
-    for pt_dir, hTempl in hTempls.items():
-        outFile.cd(f"{pt_dir}/templs/")
-        if hTempl:
-            for chn, histo in hTempl.items():
-                histo.Write(f"hTempl_{chn}") if "rebin_mass_sel" in chn else histo.Write(f"hTempl_{chn}_raw")
+    # Write template information
+    # Write the fractions of the templates for each pt bin to the output file
+    for pt_min, pt_max in zip(ptmins, ptmaxs):
+        pt_dir = f'pt_{int(pt_min*100)}_{int(pt_max*100)}'
+        outFile.cd(pt_dir)
+        # Continue if templsInfos[pt_dir] = {}
+        if not templsInfos[pt_dir]:
+            continue
+        if templsInfos.get(f'hist_templ_fracs_{pt_dir}') is not None:
+            templsInfos[f'hist_templ_fracs_{pt_dir}'].Write(f'hist_templ_fracs_{pt_dir}')
+        if templsInfos.get(f'hist_templ_n_entries_{pt_dir}') is not None:
+            templsInfos[f'hist_templ_n_entries_{pt_dir}'].Write(f'hist_templ_n_entries_{pt_dir}')
+        if templsInfos[pt_dir].get('bkgs') is not None:
+            for chn, chn_info in templsInfos[pt_dir]['bkgs'].items():
+                outFile.mkdir(f"{pt_dir}/templs/{chn}")
+                outFile.cd(f"{pt_dir}/templs/{chn}")
+                chn_info['histo'].Write(f'histo_{chn}')
+                if chn_info.get('hist_rebin_mass_sel') is not None:
+                    chn_info['hist_rebin_mass_sel'].Write(f'hist_rebin_mass_sel_{chn}')
+                for col, histo in chn_info['proj_cols'].items():
+                    histo.Write(f"{col}_proj")
+
+        sgn_chn = cfg_corr_bkgs['sgn_chn']
+        outFile.mkdir(f"{pt_dir}/templs/{sgn_chn}")
+        outFile.cd(f"{pt_dir}/templs/{sgn_chn}")
+        templsInfos[pt_dir][sgn_chn]['histo'].Write(f'histo_{sgn_chn}')
+        for col, histo in templsInfos[pt_dir][sgn_chn]['proj_cols'].items():
+            histo.Write(f"{col}_proj")
 
     outFile.cd()
     hSigmaSimFit.Write()

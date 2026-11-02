@@ -536,8 +536,10 @@ if __name__ == "__main__":
         for pt_dir in pt_dirs:
             trial_dirs = sorted(glob.glob(os.path.join(pt_dir, 'trials/*')))
             for i_trial, trial_dir in enumerate(trial_dirs):
+                print(f"Processing trial {i_trial+1}/{len(trial_dirs)} in {os.path.basename(pt_dir)}...")
                 try:
                     trial_result = get_trial_result(trial_dir, cutsets)
+                    print(f"Extracted trial {os.path.basename(trial_dir)} with {len(trial_result)} rows.")
                     if args.force_prompt_enhanced:
                         print(f"Checking prompt-enhanced cutset convergence for trial {os.path.basename(trial_dir)}...")
                         # Retrieve Cutset_0 row

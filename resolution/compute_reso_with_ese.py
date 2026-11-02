@@ -14,6 +14,8 @@ SetGlobalStyle(padleftmargin=0.15, padbottommargin=0.15,
                padrightmargin=0.15, titleoffsety=1.1, maxdigits=3, titlesizex=0.03,
                labelsizey=0.04, setoptstat=0, setopttitle=0, palette=ROOT.kGreyScale)
 
+from scipy.ndimage import gaussian_filter
+
 ROOT.gROOT.SetBatch(True)
 
 def parse_ese_bands(bands_cfg):
@@ -48,6 +50,116 @@ def SetFrameStyle(hFrame, xtitle, ytitle, ytitleoffset, ytitlesize, ylabelsize,
     hFrame.GetXaxis().SetMoreLogLabels(xmoreloglabels)
     hFrame.GetYaxis().CenterTitle(ycentertitle)
     hFrame.GetYaxis().SetMaxDigits(ymaxdigits)
+
+
+def compute_reso_map_vs_cent_q2(histos_triplets, histos_triplets_labels, cent_min_max,
+                                triplet=('FT0c', 'FV0a', 'TPCtot')):
+    """
+    Computes a TH2F of resolution vs Centrality (X) and reduced_q2 (Y) cell-by-cell.
+    Requires input ROOT.TH3 histograms for the target subsystem triplet.
+    """
+    
+    print(f"\n\n\n\nComputing 2D resolution map for triplet {triplet} and centrality range {cent_min_max}")
+    target_histo = None
+    for histo, label in zip(histos_triplets, histos_triplets_labels):
+        if tuple(label) == tuple(triplet):
+            target_histo = histo
+            break
+
+    if target_histo is None or not isinstance(target_histo[0], ROOT.TH3):
+        print(f"Warning: Cannot compute 2D resolution map. Triplet {triplet} with TH3 histograms not found.")
+        return None
+
+    # Retrieve binning from the first TH3: X = Centrality, Z = reduced_q2
+    h3_ref = target_histo[0]
+    x_axis = h3_ref.GetXaxis()  # Centrality
+    z_axis = h3_ref.GetZaxis()  # reduced_q2
+
+    # Restrict centrality range according to arguments
+    bin_x_min = max(1, x_axis.FindBin(cent_min_max[0]))
+    bin_x_max = min(x_axis.GetNbins(), x_axis.FindBin(cent_min_max[1]) - 1)
+
+    # Replicate X (Centrality) and Y (q2) binning directly into TH2F
+    x_edges = [x_axis.GetBinLowEdge(i) for i in range(bin_x_min, bin_x_max + 2)]
+    z_edges = [z_axis.GetBinLowEdge(i) for i in range(1, z_axis.GetNbins() + 2)]
+
+    reso_map = ROOT.TH2F("h2_reso_cent_vs_q2", "Resolution vs Centrality and q_{2};Centrality (%);q_{2};R_{2}",
+                             len(x_edges) - 1, np.array(x_edges, dtype=np.float64),
+                             len(z_edges) - 1, np.array(z_edges, dtype=np.float64))
+    reso_map.SetDirectory(0)
+
+    # Compute cell-by-cell resolution
+    for ix_out, ix in enumerate(range(bin_x_min, bin_x_max + 1), start=1):
+        for iz in range(1, z_axis.GetNbins() + 1):
+            cell_means = []
+            for h3 in target_histo:
+                # Project the Y axis (Q_A * Q_B) for a single cell (Centrality_bin, q2_bin)
+                h_proj = h3.ProjectionY(f"proj_temp_{ix}_{iz}", ix, ix, iz, iz)
+                cell_means.append(h_proj.GetMean())
+                del h_proj
+
+            # Calculate resolution via R = sqrt((m1 * m2) / m3)
+            reso_val = compute_resolution(cell_means, verbose=False)
+            reso_map.SetBinContent(ix_out, iz, reso_val)
+
+# Now apply Gaussian smoothing to the resolution map for better visualization
+    n_bins_x = reso_map.GetNbinsX()
+    n_bins_y = reso_map.GetNbinsY()
+
+    # Extract 2D grid of bin contents (1-indexed in ROOT)
+    data = np.zeros((n_bins_x, n_bins_y), dtype=np.float64)
+    for ix in range(1, n_bins_x + 1):
+        for iy in range(1, n_bins_y + 1):
+            data[ix - 1, iy - 1] = reso_map.GetBinContent(ix, iy)
+
+    # 1. Convert physical sigmas to bin index units correctly
+    # X (Centrality): 1% per bin -> sigma = 2.0% (2.0 bins) for anti-aliasing noise
+    # Y (q2): 0.02 per bin -> sigma = 0.10 units (5.0 bins) for smoother trends
+    sigma_cent_physical = 2.0  # Physical width in %
+    sigma_q2_physical = 0.10  # Physical width in q2 units
+
+    bin_width_x = 1.0  # 1% per bin
+    bin_width_y = 0.02  # 0.02 per bin
+
+    sigma_bins = (
+        sigma_cent_physical / bin_width_x,
+        sigma_q2_physical / bin_width_y,
+    )  # Evaluates to (2.0, 5.0)
+
+    # 2. Separate true signal bins from zero-padded background
+    mask = (data > 0).astype(np.float64)
+    mask[85:, :] = 0.0
+    data_masked = np.nan_to_num(data) * mask
+
+    # 3. Smooth signal and mask independently (mode='constant' keeps true zero boundary)
+    smoothed_data = gaussian_filter(data_masked, sigma=sigma_bins, mode="constant", cval=0.0)
+    smoothed_mask = gaussian_filter(mask, sigma=sigma_bins, mode="constant", cval=0.0)
+
+    # 4. Normalized weighted smoothing (ignores zero-bin contamination inside the active bulk)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        result = np.where(smoothed_mask > 1e-5, smoothed_data / smoothed_mask, 0.0)
+
+    # 5. Smooth zero-tapering at the dataset boundary
+    # Multiply by smoothed_mask directly to naturally roll off from 1.0 down to 0.0
+    result = result * smoothed_mask
+
+    # Clone histogram to preserve original metadata and update bin contents
+    reso_map_smoothed = reso_map.Clone(f"{reso_map.GetName()}_smoothed")
+    residuals_smoothing = reso_map.Clone(f"{reso_map.GetName()}_residuals")
+    for ix in range(1, n_bins_x + 1):
+        for iy in range(1, n_bins_y + 1):
+            orig_val = data[ix - 1, iy - 1]
+            sm_val = result[ix - 1, iy - 1]
+
+            reso_map_smoothed.SetBinContent(ix, iy, sm_val)
+
+            # Mask out residuals in unpopulated regions
+            if orig_val > 0:
+                residuals_smoothing.SetBinContent(ix, iy, orig_val - sm_val)
+            else:
+                residuals_smoothing.SetBinContent(ix, iy, 0.0)
+
+    return reso_map, reso_map_smoothed, residuals_smoothing
 
 
 def get_resolution(dets, det_lables, cent_min_max):
@@ -110,21 +222,21 @@ def get_resolution(dets, det_lables, cent_min_max):
                            cent_min_max[0], cent_min_max[1])
     histo_reso.SetDirectory(0)
     for icent in range(cent_min_max[0], cent_min_max[1]):
-        reso = compute_resolution([histo_means[i].GetBinContent(icent-cent_min_max[0]+1) for i in range(len(dets))])
+        reso = compute_resolution([histo_means[i].GetBinContent(icent-cent_min_max[0]+1) for i in range(len(dets))], args.verbose)
         centbin = histo_reso.GetXaxis().FindBin(icent)
         histo_reso.SetBinContent(centbin, reso)
 
     # Compute resolution for CentMin-CentMax
     histo_reso_delta_cent = ROOT.TH1F('histo_reso_delta_cent', 'histo_reso_delta_cent',
                                       1, cent_min_max[0], cent_min_max[1])
-    res_deltacent = compute_resolution([histo_means_deltacent[i].GetBinContent(1) for i in range(len(dets))])
+    res_deltacent = compute_resolution([histo_means_deltacent[i].GetBinContent(1) for i in range(len(dets))], args.verbose)
     histo_reso_delta_cent.SetBinContent(1, res_deltacent)
     histo_reso_delta_cent.SetDirectory(0)
 
     return histo_means, histo_means_deltacent, histo_reso, histo_reso_delta_cent
 
 
-def compute_resolution(subMean):
+def compute_resolution(subMean, verbose=False):
     '''
     Compute resolution for SP or EP method
 
@@ -136,7 +248,8 @@ def compute_resolution(subMean):
         - resolution:
             float, resolution value
     '''
-    print(subMean)
+    if verbose:
+        print(subMean)
     if len(subMean) == 1:
         resolution =  subMean[0]
         if resolution <= 0:
@@ -144,20 +257,22 @@ def compute_resolution(subMean):
         else:
             return np.sqrt(resolution)
     elif len(subMean) == 3:
-        print('3 subsystems')
+        if verbose:
+            print('3 subsystems')
         resolution = (subMean[0] * subMean[1]) / subMean[2] if subMean[2] != 0 else 0
         if resolution <= 0:
             return 0
         else:
-            print(resolution, np.sqrt(resolution))
+            if verbose:
+                print(resolution, np.sqrt(resolution))
             return np.sqrt(resolution)
     else:
         print('ERROR: dets must be a list of 2 or 3 subsystems')
         sys.exit(1)
 
 
-def project_ese(histos_triplets, histos_triplets_labels, ese_thresholds, ese_bands,
-                triplet=('FT0c', 'FV0a', 'TPCtot')):
+def project_ese(histos_triplets, histos_triplets_labels, ese_thresholds,
+                ese_bands, triplet=('FT0c', 'FV0a', 'TPCtot')):
     '''
     Project histograms for each ESE selection
 
@@ -260,6 +375,7 @@ if __name__ == "__main__":
                         default="", help="Detector for ESE quantiles")
     parser.add_argument("--config", "-cfg", metavar="text", default="",
                         help="config file, ESE bands are read from its 'ese' block")
+    parser.add_argument("--verbose", "-v", action='store_true', default=False, help="verbose output")
     parser.add_argument("--batch", "-b", action='store_true', help="run in batch mode")
     args = parser.parse_args()
 
@@ -291,17 +407,6 @@ if __name__ == "__main__":
         print('WARNING: ESE bands defined but no quantile file, only Inclusive will be computed')
     histos_filtered_dict = project_ese(histos_triplets, histos_triplets_labels,
                                        ese_thresholds, ese_bands, triplet)
-    # exit(1)
-
-    # # Save histos for debugging purposes
-    # debug_outfile_name = f'{args.outputdir}/debug_histo_{args.suffix}.root'
-    # debug_outfile = ROOT.TFile(debug_outfile_name, 'RECREATE')
-    # for ese_sel_label, histo_triplet_dict in histos_filtered_dict.items():
-    #     for histo_triplet_label, histo_triplet in histo_triplet_dict.items():
-    #         for hist in histo_triplet:
-    #             hist.SetDirectory(debug_outfile)
-    #             hist.Write()
-    # debug_outfile.Close()
 
     print("Histograms projected for ESE selections. Starting resolution computation...")
 
@@ -314,39 +419,35 @@ if __name__ == "__main__":
     latex = ROOT.TLatex()
     latex.SetNDC()
     latex.SetTextSize(0.05)
-    print('\n\n\n')
     for ese_sel_label, histo_triplet_dict in histos_filtered_dict.items():
-        print(f'Processing ESE selection: {ese_sel_label}')
-        print(f"histo_triplet_dict: {histo_triplet_dict}")
         for histo_triplet_label, histo_triplet in histo_triplet_dict.items():
-            # histo_triplet_label = list(histo_triplet_dict.keys())[0]
-            # histo_triplet = histo_triplet_dict[histo_triplet_label]
-            print(f'histo_triplet_label: {histo_triplet_label}')
-            print(f'histo_triplet: {histo_triplet}')
             histos_mean, histos_mean_deltacent, histo_reso, histo_reso_deltacent = get_resolution(histo_triplet,
-                                                                                                histo_triplet_label,
-                                                                                                cent_min_max)
+                                                                                                  histo_triplet_label,
+                                                                                                  cent_min_max)
             detA_label = histo_triplet_label[0]
             detB_label = histo_triplet_label[1]
             detC_label = histo_triplet_label[2]
+            print(f'Processing combination ({detA_label}, {detB_label}, {detC_label}) for ESE selection: {ese_sel_label}')
             outfile.cd()
-            make_dir_root_file(f'{ese_sel_label}/{detA_label}_{detB_label}_{detC_label}', outfile, verbose=False)
-            outfile.cd(f'{ese_sel_label}/{detA_label}_{detB_label}_{detC_label}')
-            print(f'Processing combination: {detA_label}, {detB_label}, {detC_label} for ESE selection: {ese_sel_label}')
+
+            # If there is only the Inclusive selection, create a directory with the triplet name only
+            if len(histos_filtered_dict) == 1 and 'Inclusive' in histos_filtered_dict:
+                make_dir_root_file(f'{detA_label}_{detB_label}_{detC_label}', outfile, verbose=False)
+                outfile.cd(f'{detA_label}_{detB_label}_{detC_label}')
+            else:
+                make_dir_root_file(f'{ese_sel_label}/{detA_label}_{detB_label}_{detC_label}', outfile, verbose=False)
+                outfile.cd(f'{ese_sel_label}/{detA_label}_{detB_label}_{detC_label}')
             canvas = ROOT.TCanvas(f'canvas_{detA_label}_{detB_label}_{detC_label}_{ese_sel_label}',
-                                f'canvas_{detA_label}_{detB_label}_{detC_label}_{ese_sel_label}',
-                                2400, 800)
-            print(f'Canvas created for combination: {detA_label}, {detB_label}, {detC_label} for ESE selection: {ese_sel_label}')
+                                  f'canvas_{detA_label}_{detB_label}_{detC_label}_{ese_sel_label}',
+                                  2400, 800)
             canvas.Divide(3, 1)
             leg = ROOT.TLegend(0.2, 0.2, 0.5, 0.3)
             leg.SetBorderSize(0)
             leg.SetFillStyle(0)
             leg.SetTextSize(0.03)
-            print(f'Processing histograms for combination: {detA_label}, {detB_label}, {detC_label} for ESE selection: {ese_sel_label}')
             for i, (hist_det, hist_mean, histo_mean_deltacent) in enumerate(zip(histo_triplet,
                                                                                 histos_mean,
                                                                                 histos_mean_deltacent)):
-                print(f'Processing histogram {i+1} for combination: {detA_label}, {detB_label}, {detC_label} for ESE selection: {ese_sel_label}')
                 SetObjectStyle(hist_mean, color=ROOT.kRed, markerstyle=ROOT.kFullCircle,
                             markersize=1, fillstyle=0, linewidth=2)
                 SetObjectStyle(histo_mean_deltacent, color=ROOT.kBlue, markerstyle=ROOT.kOpenCircle,
@@ -355,26 +456,25 @@ if __name__ == "__main__":
                 canvas.cd(i+1).SetLogz()
                 hFrame = canvas.cd(i+1).DrawFrame(0, -2, 100, 2)
                 SetFrameStyle(hFrame,
-                            xtitle='Cent. FT0c (%)',
-                            ytitle=ytitle,
-                            ytitleoffset=1.15,
-                            ytitlesize=0.05,
-                            ylabelsize=0.04,
-                            ylabeloffset=0.01,
-                            xticklength=0.04,
-                            yticklength=0.03,
-                            xtitlesize=0.05,
-                            xlabelsize=0.04,
-                            xtitleoffset=1.1,
-                            xlabeloffset=0.020,
-                            ydivisions=406,
-                            xmoreloglabels=True,
-                            ycentertitle=True,
-                            ymaxdigits=5)
+                              xtitle='Cent. FT0c (%)',
+                              ytitle=ytitle,
+                              ytitleoffset=1.15,
+                              ytitlesize=0.05,
+                              ylabelsize=0.04,
+                              ylabeloffset=0.01,
+                              xticklength=0.04,
+                              yticklength=0.03,
+                              xtitlesize=0.05,
+                              xlabelsize=0.04,
+                              xtitleoffset=1.1,
+                              xlabeloffset=0.020,
+                              ydivisions=406,
+                              xmoreloglabels=True,
+                              ycentertitle=True,
+                              ymaxdigits=5)
                 hist_det.Draw('same colz')
                 histo_mean_deltacent.Draw('same pl')
                 hist_mean.Draw('same pl')
-                print(f'Histograms drawn for histogram {i+1} for combination: {detA_label}, {detB_label}, {detC_label} for ESE selection: {ese_sel_label}')
                 if i == 0:
                     leg.AddEntry(hist_mean, 'Average 1% centrality', 'lp')
                     leg.AddEntry(histo_mean_deltacent,
@@ -388,7 +488,7 @@ if __name__ == "__main__":
                 histo_mean_deltacent.Write()
                 hist_mean.Write()
                 hist_det.Write()
-                print(f'Histograms written for histogram {i+1} for combination: {detA_label}, {detB_label}, {detC_label} for ESE selection: {ese_sel_label}')
+
             canvas.Update()
             canvas.Write()
             histo_reso.SetDirectory(outfile)
@@ -396,8 +496,28 @@ if __name__ == "__main__":
             histo_reso.Write()
             histo_reso_deltacent.Write()
             outfile.cd('..')
-            print(f'Finished processing combination: {detA_label}, {detB_label}, {detC_label} for ESE selection: {ese_sel_label}')
+            print(f'---> Finished processing combination: {detA_label}, {detB_label}, {detC_label} for ESE selection: {ese_sel_label}')
+
+    # # Generate and save the 2D resolution map
+    # reso_map_vs_cent_q2, reso_map_vs_cent_q2_smoothed, residuals_smoothing = \
+    #     compute_reso_map_vs_cent_q2(histos_triplets, histos_triplets_labels, cent_min_max, triplet)
+    # if reso_map_vs_cent_q2:
+    #     outfile.cd()
+    #     reso_map_vs_cent_q2.Write()
+    #     reso_map_vs_cent_q2_smoothed.Write()
+    #     residuals_smoothing.Write()
+
     outfile.Close()
+
+    # # Save histos for debugging purposes
+    # debug_outfile_name = f'{args.outputdir}/debug_histo_{args.suffix}.root'
+    # debug_outfile = ROOT.TFile(debug_outfile_name, 'RECREATE')
+    # for ese_sel_label, histo_triplet_dict in histos_filtered_dict.items():
+    #     for histo_triplet_label, histo_triplet in histo_triplet_dict.items():
+    #         for hist in histo_triplet:
+    #             hist.SetDirectory(debug_outfile)
+    #             hist.Write()
+    # debug_outfile.Close()
 
     if not args.batch:
         input('Resolutions computed. Press any key to continue')

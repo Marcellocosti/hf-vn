@@ -323,7 +323,7 @@ class RawYieldFitter:
         output_type = 'hist'
         if self.minimize_flarefly and not self.data.get_is_binned():
             output_type = 'df'
-        _, self.sgn_templ_frac = get_corr_bkg(corr_bkg_file, self.sgn_templ_name, sel_string, pt_label, 'raw', output_type)
+        _, self.sgn_templ_frac, _, _ = get_corr_bkg(corr_bkg_file, self.sgn_templ_name, sel_string, pt_label, 'raw', output_type)
         count_sgn_templs, count_bkg_templs = 0, 0
         for i_chn, chn in enumerate(cocktail_cfg['channels']):
 
@@ -335,7 +335,7 @@ class RawYieldFitter:
                 continue
 
             # name = chn['name']
-            templ, frac = get_corr_bkg(corr_bkg_file, chn, sel_string, pt_label, 'raw', output_type)
+            templ, frac, _, _ = get_corr_bkg(corr_bkg_file, chn, sel_string, pt_label, 'raw', output_type)
             if frac < 1e-10:
                 if self.verbose:
                     logger(f"Skipping correlated bkg source {chn} with negligible fraction {frac}", level="WARNING")

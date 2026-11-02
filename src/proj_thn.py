@@ -22,23 +22,6 @@ from utils import reweight_histo_1D, reweight_histo_2D, reweight_histo_3D, get_v
 
 ROOT.TH1.AddDirectory(False)
 
-TITLE_TO_NAME = {
-    'Inv. mass (GeV/#it{c}^{2})': 'Mass',
-    '#it{p}_{T} (GeV/#it{c})':    'Pt',
-    'Centrality':                 'Cent',
-    'SP':                         'Sp',
-    'Bkg score':                  'ScoreBkg',
-    'FD score':                   'ScoreFD',
-    'Reduced Q-vector':           'Qvec',
-}
-
-def build_axis_idx(sparse):
-    idx = {}
-    for i in range(sparse.GetNdimensions()):
-        title = sparse.GetAxis(i).GetTitle()
-        idx[TITLE_TO_NAME.get(title, title)] = i
-    return idx
-
 def proj_multitrial(config, multitrial_folder, workers, resolution):
 
     pt_bin_label = Path(multitrial_folder).name
@@ -125,7 +108,8 @@ def proj_data(i_bin, sparse, axes, resolution, proj_cfg, writeopt):
         hist_var.Write(f'h{var.capitalize()}Data', writeopt)
 
     hist_vn_sp = get_vn_versus_mass(sparse, proj_cfg['VnVsMassBins'][i_bin], axes['FlowSP']['Mass'], axes['FlowSP']['Sp'])
-    hist_vn_sp.Scale(1/resolution) # Correct for resolution
+    if resolution is not None:
+        hist_vn_sp.Scale(1/resolution) # Correct for resolution
     hist_vn_sp.Write('hVnVsMassData', writeopt)
 
     # Save a TH2 of (Mass, Sp) for the multitrial systematic
@@ -310,30 +294,36 @@ if __name__ == "__main__":
         _, (centLowLim, centMaxLim) = get_centrality_bins(config['centrality'])
 
     if operations.get("proj_data") or args.multitrial_folder != "":
-        reso_file = TFile.Open(config["projections"]["Resolution"], 'r')
-        det_A = config["projections"].get('detA', 'FT0c')
-        det_B = config["projections"].get('detB', 'FV0a')
-        det_C = config["projections"].get('detC', 'TPCtot')
-        logger(f"Getting resolution histogram from file {config['projections']['Resolution']} for triplet {det_A}_{det_B}_{det_C}",  "WARNING")
-        ese_band = (config.get('ese') or {}).get('band')
-        ese_sel = (get_ese_band_label(ese_band[0], ese_band[1])
-                   if ese_band and ese_band != 'Inclusive' else 'Inclusive')
-        reso_paths = [f'{ese_sel}/{det_A}_{det_B}_{det_C}/histo_reso_delta_cent']
-        if ese_sel == 'Inclusive':  # legacy reso files without ESE directories
-            reso_paths.append(f'{det_A}_{det_B}_{det_C}/histo_reso_delta_cent')
-        reso_hist = None
-        for reso_path in reso_paths:
-            reso_hist = reso_file.Get(reso_path)
-            if reso_hist:
-                logger(f"Found resolution histogram at {reso_path}", "INFO")
-                break
-        if not reso_hist:
-            logger(f"Resolution histogram not found in {config['projections']['Resolution']}. "
-                   f"Tried: {', '.join(reso_paths)}", "ERROR")
-            sys.exit(1)
-        resolution = reso_hist.GetBinContent(1)
-        reso_hist.SetDirectory(0)
-        reso_file.Close()
+
+        # Resolution was computed online on hyperloop
+        if config["projections"].get("Resolution") is None:
+            logger("No resolution histogram provided in the config file, will not correct for resolution!", level='WARNING')
+            resolution = None
+        else:
+            reso_file = TFile.Open(config["projections"]["Resolution"], 'r')
+            det_A = config["projections"].get('detA', 'FT0c')
+            det_B = config["projections"].get('detB', 'FV0a')
+            det_C = config["projections"].get('detC', 'TPCtot')
+            logger(f"Getting resolution histogram from file {config['projections']['Resolution']} for triplet {det_A}_{det_B}_{det_C}",  "WARNING")
+            ese_band = (config.get('ese') or {}).get('band')
+            ese_sel = (get_ese_band_label(ese_band[0], ese_band[1])
+                    if ese_band and ese_band != 'Inclusive' else 'Inclusive')
+            reso_paths = [f'{ese_sel}/{det_A}_{det_B}_{det_C}/histo_reso_delta_cent']
+            if ese_sel == 'Inclusive':  # legacy reso files without ESE directories
+                reso_paths.append(f'{det_A}_{det_B}_{det_C}/histo_reso_delta_cent')
+            reso_hist = None
+            for reso_path in reso_paths:
+                reso_hist = reso_file.Get(reso_path)
+                if reso_hist:
+                    logger(f"Found resolution histogram at {reso_path}", "INFO")
+                    break
+            if not reso_hist:
+                logger(f"Resolution histogram not found in {config['projections']['Resolution']}. "
+                    f"Tried: {', '.join(reso_paths)}", "ERROR")
+                sys.exit(1)
+            resolution = reso_hist.GetBinContent(1)
+            reso_hist.SetDirectory(0)
+            reso_file.Close()
 
     if args.multitrial_folder != "":
         logger(f"Running multitrial projections with config: {args.config}", level='INFO')
@@ -365,7 +355,7 @@ if __name__ == "__main__":
     if operations.get("proj_mc"):
         sPtWeightsD, sPtWeightsB, Bspeciesweights = get_pt_weights(config["projections"]) if config['projections'].get('PtWeightsFile') else (None, None, None)
 
-    if operations.get("proj_data"):
+    if operations.get("proj_data") and resolution is not None:
         outfile.cd()
         reso_hist.Write("hResolution", write_opt_data)
         resolution = reso_hist.GetBinContent(1)
@@ -377,14 +367,10 @@ if __name__ == "__main__":
 
             # Cut on centrality and pt on data applied in the preprocessing
             logger(f'Projecting distributions for {pt_min:.1f} < pT < {pt_max:.1f} GeV/c')
-            pt_label = f"pt_{int(pt_min*10)}_{int(pt_max*10)}"
+            pt_label = f"pt_{int(pt_min*100)}_{int(pt_max*100)}"
             make_dir_root_file(pt_label, outfile)
             sparse_flow, sparses_reco, sparses_gen, axes = get_pt_preprocessed_sparses(config, pt_label)
-            axes['FlowSP'] = build_axis_idx(sparse_flow['FlowSP'])
-            for key, i_sparse in sparses_reco.items():
-                axes[key] = build_axis_idx(i_sparse)
-            for key, i_sparse in sparses_gen.items():
-                axes[key] = build_axis_idx(i_sparse)
+
             outfile.cd(pt_label)
             if operations.get("proj_data"):
                 sparse_flow["FlowSP"].GetAxis(axes['FlowSP']['ScoreFD']).SetRangeUser(fd_min, fd_max)
