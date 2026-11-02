@@ -26,6 +26,7 @@ ClassImp(VnVsMassFitter);
 VnVsMassFitter::VnVsMassFitter()
   :TObject()
   ,fName("")
+  ,fParticle("")
   ,fMassHisto(0x0)
   ,fVnVsMassHisto(0x0)
   ,fPrefitParsHisto(0x0)
@@ -126,15 +127,15 @@ VnVsMassFitter::VnVsMassFitter()
   ,fFixFracSecWidth(kFALSE)
   ,fIsMassSidebandFit(kFALSE)
   ,fIsVnSidebandFit(kFALSE)
-  // ,fInitFuncPars()
   {
     //default constructor
 }
 
 //________________________________________________________________
-VnVsMassFitter::VnVsMassFitter(std::string name, TH1F* hMass, TH1F* hvn, Double_t min, Double_t max, Int_t funcMassBkg, Int_t funcMassSgn, Int_t funcVnBkg, Bool_t suppressOutput)
+VnVsMassFitter::VnVsMassFitter(std::string name, std::string particle, TH1F* hMass, TH1F* hvn, Double_t min, Double_t max, Int_t funcMassBkg, Int_t funcMassSgn, Int_t funcVnBkg, Bool_t suppressOutput)
   :TObject()
   ,fName(name)
+  ,fParticle(particle)
   ,fPrefitParsHisto(0x0)
   ,fSignalParsHisto(0x0)
   ,fSimFitParsHisto(0x0)
@@ -233,7 +234,6 @@ VnVsMassFitter::VnVsMassFitter(std::string name, TH1F* hMass, TH1F* hvn, Double_
   ,fFixFracSecWidth(kFALSE)
   ,fIsMassSidebandFit(kFALSE)
   ,fIsVnSidebandFit(kFALSE)
-  // ,fInitFuncPars()
   {
 
     //standard constructor
@@ -241,7 +241,6 @@ VnVsMassFitter::VnVsMassFitter(std::string name, TH1F* hMass, TH1F* hvn, Double_
     fMassHisto->SetDirectory(0);
     fVnVsMassHisto = (TH1F*)hvn->Clone(Form("fHistoV%dVsMass_%s",fHarmonic, fName.c_str()));
     fVnVsMassHisto->SetDirectory(0);
-    fMassFitter = new InvMassFitter(fMassHisto,fMassMin,fMassMax,fMassBkgFuncType,fMassSgnFuncType);
 
     DefineNumberOfParameters();
     SetParInitValsAndNames();
@@ -292,8 +291,6 @@ Int_t VnVsMassFitter::RunPrefits() {
   if(!prefitbkg) {printf("Impossible to perform the prefit of comb. bkg.\n"); return kFALSE;}
   // Prefit the invariant mass spectrum to get initial values for the simultaneous fit
 
-  // std::cout << "fNParsTotMass: " << fNParsTotMass << ", fNParsMassBkg: " << fNParsMassBkg << ", fNParsMassSgn: " << fNParsMassSgn << ", fNParsTotVn: " << fNParsTotVn << std::endl;
-  double parLowLim{0.}, parUpLim{0.};
   for (Int_t iPar = 0; iPar < fNParsMassBkg; iPar++) {
     fMassTotFunc->SetParName(iPar, fMassBkgFunc->GetParName(iPar));
     fVnTotFunc->SetParName(iPar, fMassBkgFunc->GetParName(iPar));
@@ -377,6 +374,7 @@ Int_t VnVsMassFitter::PrefitMass(){
   // If second peak is present, quantify bin counting between fMassRangeMinSecPeak
   // and fMassRangeMaxSecPeak and, if too low, remove it
   if (fSecondPeak) {
+    std::cout << "Checking if second peak has enough counts in the specified region [" << fMassRangeMinSecPeak << ", " << fMassRangeMaxSecPeak << "]" << std::endl;
     for (Int_t iPar = 0; iPar < fNParsMassBkg; iPar++) {
       if (!fSuppressOutput) {
         std::cout << "Setting prefit parameter " << iPar << " from " << fMassBkgFunc->GetParameter(iPar) << " to " << fMassTotFunc->GetParameter(iPar) << std::endl;
@@ -389,6 +387,8 @@ Int_t VnVsMassFitter::PrefitMass(){
     // Subtract the background counts in the same region
     Double_t bkgCountsInSecPeakRegion = fMassBkgFunc->Integral(fMassRangeMinSecPeak, fMassRangeMaxSecPeak) / fMassHisto->GetBinWidth(1);
     Double_t netCounts = countsInSecPeakRegion - bkgCountsInSecPeakRegion;
+    std::cout << "Counts in second peak region: " << countsInSecPeakRegion << ", background counts: " << bkgCountsInSecPeakRegion
+              << ", net counts: " << netCounts << std::endl;
     if (!fSuppressOutput) {
       std::cout << "Counts in second peak region: " << countsInSecPeakRegion << ", background counts: " << bkgCountsInSecPeakRegion
                 << ", net counts: " << netCounts << std::endl;
@@ -564,19 +564,7 @@ Int_t VnVsMassFitter::SimultaneousFit() {
 
   // create before the parameter settings in order to fix or set range on them
   double parLowLim{0.}, parUpLim{0.};
-  std::vector<Double_t> initpars;
-  for(Int_t iPar=0; iPar<fMassTotFunc->GetNpar(); iPar++) {
-    initpars.push_back(fMassTotFunc->GetParameter(iPar));
-  }
-  for(Int_t iVnBkgPar=0; iVnBkgPar<fNParsVnBkg; iVnBkgPar++) {
-    initpars.push_back(fVnBkgFunc->GetParameter(iVnBkgPar));
-    // if(vnprefit) {initpars.push_back(fVnBkgFunc->GetParameter(iVnBkgPar));}
-    // else {initpars.push_back(0.05);}
-  }
-  initpars.push_back(0.10);                                       // initial parameter for signal vn
-  if(fSecondPeak && fDoSecondPeakVn) {initpars.push_back(0.10);}  // initial parameter for second peak vn
-
-  fitter.Config().SetParamsSettings(fNParsTotVn,initpars.data());     // set initial parameters from prefits
+  fitter.Config().SetParamsSettings(fNParsTotVn, std::vector<Double_t>(fNParsTotVn, 0.).data());
   for (int iPar = 0; iPar < fNParsTotVn; ++iPar) {
     fVnTotFunc->GetParLimits(iPar, parLowLim, parUpLim);
     fitter.Config().ParSettings(iPar).SetValue(fVnTotFunc->GetParameter(iPar));
@@ -593,7 +581,7 @@ Int_t VnVsMassFitter::SimultaneousFit() {
     if(fFixSecMass) {fitter.Config().ParSettings(fNParsMassBkg+fNParsMassSgn+1).Fix();}
     if(fFixSecWidth) {fitter.Config().ParSettings(fNParsMassBkg+fNParsMassSgn+2).Fix();}
     fitter.Config().ParSettings(fNParsMassBkg+fNParsMassSgn).SetLimits(0, 1000000);
-    fitter.Config().ParSettings(fNParsMassBkg+fNParsMassSgn+1).SetLimits(1.99, 2.04);
+    fitter.Config().ParSettings(fNParsMassBkg+fNParsMassSgn+1).SetLimits(fMassRangeMinSecPeak, fMassRangeMaxSecPeak); // D* peak
   }
   if(fReflections) {
     if(fFixRflOverSig) fitter.Config().ParSettings(fNParsMassBkg+fNParsMassSgn+fNParsSec).Fix();
@@ -616,29 +604,6 @@ Int_t VnVsMassFitter::SimultaneousFit() {
   }
   if (!fSuppressOutput) {
     std::cout << "\n--- [" << fName << "] Parameter limits and fixing for signal shape applied ---" << std::endl;
-  }
-  
-  // When sgn func is Double CrystalBall, the sgnInt, alpha and N parameters are fixed 
-  // to the ones obtained from the mass prefit (alpha and N fixed to the MC from the config)
-  if (fMassSgnFuncType==kDoubleCBSymm) {
-    // fitter.Config().ParSettings(fNParsMassBkg).Fix();
-    // fitter.Config().ParSettings(fNParsMassBkg+2).Fix();   // alpha
-    // fitter.Config().ParSettings(fNParsMassBkg+3).Fix();   // alpha
-    // fitter.Config().ParSettings(fNParsMassBkg+4).Fix();   // N
-  }
-  if (fMassSgnFuncType==kDoubleCBAsymm) {
-    // fitter.Config().ParSettings(fNParsMassBkg).Fix();
-    fitter.Config().ParSettings(fNParsMassBkg+2).SetLimits(initpars[fNParsMassBkg+2] - (initpars[fNParsMassBkg+2] / 5), initpars[fNParsMassBkg+2] + (initpars[fNParsMassBkg+2] / 5));   // alpha
-    fitter.Config().ParSettings(fNParsMassBkg+3).SetLimits(initpars[fNParsMassBkg+3] - (initpars[fNParsMassBkg+3] / 5), initpars[fNParsMassBkg+3] + (initpars[fNParsMassBkg+3] / 5));   // alpha
-    fitter.Config().ParSettings(fNParsMassBkg+4).SetLimits(initpars[fNParsMassBkg+4] - (initpars[fNParsMassBkg+4] / 5), initpars[fNParsMassBkg+4] + (initpars[fNParsMassBkg+4] / 5));   // N
-    fitter.Config().ParSettings(fNParsMassBkg+5).SetLimits(initpars[fNParsMassBkg+5] - (initpars[fNParsMassBkg+5] / 5), initpars[fNParsMassBkg+5] + (initpars[fNParsMassBkg+5] / 5));   // N
-    fitter.Config().ParSettings(fNParsMassBkg+6).SetLimits(initpars[fNParsMassBkg+6] - (initpars[fNParsMassBkg+6] / 5), initpars[fNParsMassBkg+6] + (initpars[fNParsMassBkg+6] / 5));   // N
-
-    // fitter.Config().ParSettings(fNParsMassBkg+2).Fix();   // alpha
-    // fitter.Config().ParSettings(fNParsMassBkg+3).Fix();   // alpha
-    // fitter.Config().ParSettings(fNParsMassBkg+4).Fix();   // N
-    // fitter.Config().ParSettings(fNParsMassBkg+5).Fix();   // N
-    // fitter.Config().ParSettings(fNParsMassBkg+6).Fix();   // N
   }
 
   fitter.Config().MinimizerOptions().SetPrintLevel(0);
@@ -899,7 +864,6 @@ Double_t VnVsMassFitter::MassTemplates(Double_t *m,Double_t *pars){
       std::cerr << "Error: Invalid fAnchorTemplsMode value!" << std::endl;
       break;
   }
-  // totalTemplates += pars[0]*fHistoTemplates[0]->getVal(RooArgSet(this->fMassVar));
   return totalTemplates;
 }
 
@@ -1262,11 +1226,6 @@ Double_t VnVsMassFitter::GetHigherPolFuncPDF(Double_t x, Double_t *pars, Int_t N
 //________________________________________________________________
 void VnVsMassFitter::SetFuncParNames() {
 
-  // For mass comb bkg parameter initialization
-  Double_t integral = fMassHisto->Integral("width");
-  // Initial slope estimate: difference between last and first bin
-  Double_t slopeEst = (fMassHisto->GetBinContent(fMassHisto->GetNbinsX()) - fMassHisto->GetBinContent(1)) / (fMassMax - fMassMin);
-
   fMassSgnFunc->SetParName(0, "SgnNorm");
   fMassSgnFunc->SetParName(1, "Mean");
 
@@ -1283,6 +1242,7 @@ void VnVsMassFitter::SetFuncParNames() {
       fMassSgnFunc->SetParName(2, "Sigma");
       fMassSgnFunc->SetParName(3, "Alpha");
       fMassSgnFunc->SetParName(4, "N");
+      break;
     case 3: //asymmetric crystalball
       fMassSgnFunc->SetParName(2, "Sigma");
       fMassSgnFunc->SetParName(3, "Alpha1");
@@ -1409,7 +1369,10 @@ void VnVsMassFitter::SetParInitValsAndNames() {
   Double_t slopeEst = (fMassHisto->GetBinContent(fMassHisto->GetNbinsX()) - fMassHisto->GetBinContent(1)) / (fMassMax - fMassMin);
 
   fInitFuncPars["SgnNorm"] = {integral/10, 0, integral};
-  fInitFuncPars["Mean"] = {1.869, 1.8, 2.0};
+  if (fParticle == "D0") fInitFuncPars["Mean"] = {1.865, 1.8, 1.9};
+  else if (fParticle == "Dplus") fInitFuncPars["Mean"] = {1.869, 1.8, 1.9};
+  else if (fParticle == "Ds") fInitFuncPars["Mean"] = {1.968, 1.9, 2.0};
+  else if (fParticle == "Lc") fInitFuncPars["Mean"] = {2.286, 2.2, 2.4};
 
   switch(fMassSgnFuncType) {
     case 0: //single gaus
@@ -1420,10 +1383,11 @@ void VnVsMassFitter::SetParInitValsAndNames() {
       fInitFuncPars["Sigma2"] = {0.015, 0, 0.2};
       fInitFuncPars["Frac"] = {0.1, 0, 1};
       break;
-    case 2: //symmetric crystalball
+    case 2: //left-sided crystalball
       fInitFuncPars["Sigma"] = {0.015, 0, 0.2};
       fInitFuncPars["Alpha"] = {2, 0.8, 20};
       fInitFuncPars["N"] = {20, 1.05, 100};
+      break;
     case 3: //asymmetric crystalball
       fInitFuncPars["Sigma"] = {0.015, 0, 0.2};
       fInitFuncPars["Alpha1"] = {2, 0.8, 20};
@@ -1497,16 +1461,16 @@ void VnVsMassFitter::SetParInitValsAndNames() {
   // Setting Vn parameter names
   switch(fVnBkgFuncType) {
     case 1:
-      fInitFuncPars["ConstVnBkg"] = {0.05, 0, 1};
+      fInitFuncPars["ConstVnBkg"] = {0.0, -1, 1};
       fInitFuncPars["SlopeVnBkg"] = {0.0, -1, 1};
       break;
     case 2:
-      fInitFuncPars["ConstVnBkg"] = {0.05, 0, 1};
+      fInitFuncPars["ConstVnBkg"] = {0.0, -1, 1};
       fInitFuncPars["Coef1VnBkg"] = {0.0, -1, 1};
       fInitFuncPars["Coef2VnBkg"] = {0.0, -1, 1};
       break;
     case 3:
-      fInitFuncPars["ConstVnBkg"] = {0.05, 0, 1};
+      fInitFuncPars["ConstVnBkg"] = {0.0, -1, 1};
       break;
     default:
       printf("Error in setting vn bkg par names: check fVnBkgFuncType\n");
@@ -1540,7 +1504,6 @@ void VnVsMassFitter::InitFunctionPars(std::string func) {
           fMassSgnFunc->SetParName(iPar, name.c_str());
           fMassSgnFunc->SetParameter(iPar, par.value);
           fMassSgnFunc->SetParLimits(iPar, par.low, par.high);
-          // std::cout << "---> Setting Mass Signal param: " << name << " to " << par.value << " [" << par.low << ", " << par.high << "]" << std::endl;
         }
       }
     }
@@ -1552,7 +1515,6 @@ void VnVsMassFitter::InitFunctionPars(std::string func) {
           fMassSecPeakFunc->SetParName(iPar, name.c_str());
           fMassSecPeakFunc->SetParameter(iPar, par.value);
           fMassSecPeakFunc->SetParLimits(iPar, par.low, par.high);
-          // std::cout << "---> Setting Mass Secondary Peak param: " << name << " to " << par.value << " [" << par.low << ", " << par.high << "]" << std::endl;
         }
       }
     }
@@ -1618,13 +1580,10 @@ void VnVsMassFitter::DefineFunctions() {
   fMassTotFunc = new TF1(Form("fMassTotFunc_%s", fName.c_str()),this,&VnVsMassFitter::MassFunc,fMassMin,fMassMax,fNParsTotMass,"VnVsMassFitter","MassFunc");
   fVnTotFunc = new TF1(Form("fVnTotFunc_%s", fName.c_str()),this,&VnVsMassFitter::vnFunc,fMassMin,fMassMax,fNParsTotVn,"VnVsMassFitter","vnFunc");
 
-  // SetParInitValsAndNames();
   SetFuncParNames();
   InitFunctionPars("VnBkg");
   InitFunctionPars("MassBkg");
   InitFunctionPars("MassSgn");
-  if(fReflections) {InitFunctionPars("MassRfl");}
-  if(fReflections) {InitFunctionPars("MassBkgRfl");}
   if(fSecondPeak)  {InitFunctionPars("MassSecPeak");}
 }
 
@@ -1654,10 +1613,7 @@ void VnVsMassFitter::DefineNumberOfParameters() {
 
   switch(fMassBkgFuncType) {
     case 0: //expo
-      fN
-if not args.b:
-    input("Press enter to exit")
-ParsMassBkg=2;
+      fNParsMassBkg=2;
       break;
     case 1: //lin
       fNParsMassBkg=2;
@@ -1803,10 +1759,8 @@ void VnVsMassFitter::Background(Double_t min, Double_t max, Double_t &background
 
   if(!fMassBkgFunc) {background=-1; errbackground=0; return;}
 
-  Double_t intB=fMassBkgFunc->GetParameter(0);
-  Double_t intBerr=fMassBkgFunc->GetParError(0);
   //relative error evaluation: from histo
-
+  Double_t intB, intBerr;
   Int_t leftBand=fMassHisto->FindBin(fMean-4*fSigma);
   Int_t rightBand=fMassHisto->FindBin(fMean+4*fSigma);
   intB=fMassHisto->Integral(1,leftBand)+fMassHisto->Integral(rightBand,fMassHisto->GetNbinsX());
@@ -1878,7 +1832,7 @@ TH1F* VnVsMassFitter::GetPullDistribution() {
       }
   }
   TH1F *histoPulls = new TH1F("hPulls", "hPulls;M (GeV/c); Data - fit", pulls.size(), this->fMassMin, this->fMassMax);
-  for(int iBin=0; iBin<this->fMassHisto->GetNbinsX(); iBin++) {
+  for(size_t iBin=0; iBin<pulls.size(); iBin++) {
       histoPulls->SetBinContent(iBin+1, pulls[iBin]);
   }
 

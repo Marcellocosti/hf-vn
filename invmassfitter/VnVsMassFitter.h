@@ -23,7 +23,7 @@ class VnVsMassFitter : public TObject {
 
 public:
   VnVsMassFitter();
-  VnVsMassFitter(std::string name, TH1F* hMass, TH1F* hvn, Double_t min, Double_t max, Int_t funcMassBkg, Int_t funcMassSgn, Int_t funcvnBkg, Bool_t suppressOutput);
+  VnVsMassFitter(std::string name, std::string particle, TH1F* hMass, TH1F* hvn, Double_t min, Double_t max, Int_t funcMassBkg, Int_t funcMassSgn, Int_t funcvnBkg, Bool_t suppressOutput);
   ~VnVsMassFitter();
 
   enum ETypeOfBkg{kExpo=0, kLin=1, kPol2=2, kConst=3, kPow=4, kPowEx=5, kPoln=6};
@@ -172,13 +172,6 @@ public:
 
   TH1F *GetPullDistribution();
 
-  // Double-sided crystal ball functions
-  Double_t LeftCBPDF(double x, double mu, double sigma, double a, double n);
-  Double_t DoubleSidedCBAsymmPDF(double x, double mu, double sigma, double a1, double n1, double a2, double n2);
-  Double_t DoubleSidedCBSymmPDF(double x, double mu, double sigma, double a, double n);
-
-  TH1F *GetPullDistribution();
-
   //getters
   Double_t GetVn() const {return fVn;}
   Double_t GetVnUncertainty() const {return fVnUncertainty;}
@@ -196,7 +189,6 @@ public:
   Int_t GetSBVnPrefitNDF() const {return fSBVnPrefitNDF;}
   Double_t GetSBVnPrefitReducedChiSquare() const {return fSBVnPrefitChiSquare/fSBVnPrefitNDF;}
   Double_t GetSBVnPrefitProbability() const {return fSBVnPrefitProb;}
-  InvMassFitter* GetMassPrefitObject() const {return fMassFitter;}
   Double_t GetMassPrefitChiSquare() const {return fMassPrefitChiSquare;}
   Int_t GetMassPrefitNDF() const {return fMassPrefitNDF;}
   Double_t GetMassPrefitReducedChiSquare() const {return fMassPrefitChiSquare/fMassPrefitNDF;}
@@ -372,6 +364,7 @@ private:
 
     ///data members
   std::string           fName;                          /// name of the fitter
+  std::string           fParticle;                      /// particle to fit
   TH1F*                 fMassHisto;                     /// mass histogram to fit
   TH1F*                 fPrefitParsHisto;               /// histogram to store MC fit parameters
   TH1F*                 fSignalParsHisto;               /// histogram to store fit parameters of signal function

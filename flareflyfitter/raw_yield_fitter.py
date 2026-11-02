@@ -103,34 +103,6 @@ class RawYieldFitter:
         else:
             return par_name
 
-    def remove_sec_peak(self):
-        self.sgn_pdfs = [self.sgn_pdfs[0]]
-        self.sgn_pdfs_labels = [self.sgn_pdfs_labels[0]]
-        self.signal_pdg_masses = [self.signal_pdg_masses[0]]
-        for name, comp in self.fit_model.items():
-            if comp['type'] != 'sgn':
-                continue
-            if comp['idx'] == 1:
-                del self.fit_model[name]
-                break
-
-    def parameter_map(self, par_name):
-        if self.minimize_flarefly:
-            if par_name == "mean":
-                return "mu"
-            if par_name == "Alpha1":
-                return "alphal"
-            if par_name == "Alpha2":
-                return "alphar"
-            if par_name == "N1":
-                return "nl"
-            if par_name == "N2":
-                return "nr"
-            else:
-                return par_name
-        else:
-            return par_name
-
     def set_particle(self, particle_name):
         if self.verbose:
             logger(f"Setting particle to fit: {particle_name}\n")
@@ -351,7 +323,7 @@ class RawYieldFitter:
         output_type = 'hist'
         if self.minimize_flarefly and not self.data.get_is_binned():
             output_type = 'df'
-        _, self.sgn_templ_frac = get_corr_bkg(corr_bkg_file, self.sgn_templ_name, sel_string, pt_label, 'raw', output_type)
+        _, self.sgn_templ_frac, _, _ = get_corr_bkg(corr_bkg_file, self.sgn_templ_name, sel_string, pt_label, 'raw', output_type)
         count_sgn_templs, count_bkg_templs = 0, 0
         for i_chn, chn in enumerate(cocktail_cfg['channels']):
 
@@ -363,7 +335,7 @@ class RawYieldFitter:
                 continue
 
             # name = chn['name']
-            templ, frac = get_corr_bkg(corr_bkg_file, chn, sel_string, pt_label, 'raw', output_type)
+            templ, frac, _, _ = get_corr_bkg(corr_bkg_file, chn, sel_string, pt_label, 'raw', output_type)
             if frac < 1e-10:
                 if self.verbose:
                     logger(f"Skipping correlated bkg source {chn} with negligible fraction {frac}", level="WARNING")
@@ -585,7 +557,8 @@ class RawYieldFitter:
             print(f"Setting particle mass for signal function index {i_sgn_mass} to PDG mass {pdg_mass}")
             # self.fitter.set_particle_mass(i_sgn_mass, pdg_id=pdg_mass)
             self.fitter.set_signal_initpar(i_sgn_mass, "mu", pdg_mass, limits=[pdg_mass - 0.03, pdg_mass + 0.03])
-        self.fitter.set_signal_initpar(0, "sigma", 0.015, limits=[0.005, 0.7])
+        sigma_init_val = self.sigma_init if self.sigma_init is not None else 0.015
+        self.fitter.set_signal_initpar(0, "sigma", sigma_init_val, limits=[0.005, 0.7])
         self.fitter.set_background_initpar(len(self.bkg_pdfs)-1, "c0", 1000.0, limits=[0.0, 1e6])         # Resonable value for c0
         self.fitter.set_background_initpar(len(self.bkg_pdfs)-1, "c1", 0.0, limits=[-1000.0, 1000.0])     # Resonable value for c1
         self.fitter.set_background_initpar(len(self.bkg_pdfs)-1, "c2", 0.0, limits=[-1000.0, 1000.0])     # Resonable value for c2
@@ -774,57 +747,57 @@ class RawYieldFitter:
                 RooFit.DrawOption("PE0")  # vertical error bars, no endcaps
             )
 
-            # legend_dummies = []
-            # # Create a dummy TGraph with one point
-            # dummy_data = ROOT.TGraph(1)
-            # dummy_data.SetMarkerStyle(ROOT.kFullCircle)
-            # dummy_data.SetMarkerColor(ROOT.kBlack)
-            # dummy_data.SetMarkerSize(0.8)
-            # self.legend.AddEntry(dummy_data, "Data", "pe")
-            # legend_dummies.append(dummy_data)  # keep reference
+            legend_dummies = []
+            # Create a dummy TGraph with one point
+            dummy_data = ROOT.TGraph(1)
+            dummy_data.SetMarkerStyle(ROOT.kFullCircle)
+            dummy_data.SetMarkerColor(ROOT.kBlack)
+            dummy_data.SetMarkerSize(0.8)
+            self.legend.AddEntry(dummy_data, "Data", "pe")
+            legend_dummies.append(dummy_data)  # keep reference
 
-            # # --- Add entries for model components ---
-            # for label, pdf_dict in self.fit_model.items():
-            #     info = pdf_dict.get("plot_info", {})
+            # --- Add entries for model components ---
+            for label, pdf_dict in self.fit_model.items():
+                info = pdf_dict.get("plot_info", {})
 
-            #     # Plot the PDF on the frame
-            #     args = [frame, RooFit.Components(pdf_dict["label"]), RooFit.Range("fit")]
-            #     if "line_color" in info: args.append(RooFit.LineColor(info["line_color"]))
-            #     if "line_width" in info: args.append(RooFit.LineWidth(info["line_width"]))
-            #     if "line_style" in info: args.append(RooFit.LineStyle(info["line_style"]))
-            #     if "fill_color" in info: args.append(RooFit.FillColor(info["fill_color"]))
-            #     if "fill_style" in info: args.append(RooFit.FillStyle(info["fill_style"]))
-            #     if "draw_option" in info: args.append(RooFit.DrawOption(info["draw_option"]))
+                # Plot the PDF on the frame
+                args = [frame, RooFit.Components(pdf_dict["label"]), RooFit.Range("fit")]
+                if "line_color" in info: args.append(RooFit.LineColor(info["line_color"]))
+                if "line_width" in info: args.append(RooFit.LineWidth(info["line_width"]))
+                if "line_style" in info: args.append(RooFit.LineStyle(info["line_style"]))
+                if "fill_color" in info: args.append(RooFit.FillColor(info["fill_color"]))
+                if "fill_style" in info: args.append(RooFit.FillStyle(info["fill_style"]))
+                if "draw_option" in info: args.append(RooFit.DrawOption(info["draw_option"]))
 
-            #     self.model.plotOn(*args)
+                self.model.plotOn(*args)
 
-            #     # Create persistent dummy for legend
-            #     if info.get("draw_option", "L") == "F":
-            #         dummy = TBox(0,0,1,1)
-            #         dummy.SetFillColor(info["fill_color"])
-            #         dummy.SetFillStyle(info["fill_style"])
-            #         self.legend.AddEntry(dummy, label, "f")
-            #     else:
-            #         dummy = TLine(0,0,1,1)
-            #         dummy.SetLineColor(info["line_color"])
-            #         dummy.SetLineWidth(info.get("line_width", 2))
-            #         dummy.SetLineStyle(info.get("line_style", 1))
-            #         self.legend.AddEntry(dummy, label, "l")
+                # Create persistent dummy for legend
+                if info.get("draw_option", "L") == "F":
+                    dummy = TBox(0,0,1,1)
+                    dummy.SetFillColor(info["fill_color"])
+                    dummy.SetFillStyle(info["fill_style"])
+                    self.legend.AddEntry(dummy, label, "f")
+                else:
+                    dummy = TLine(0,0,1,1)
+                    dummy.SetLineColor(info["line_color"])
+                    dummy.SetLineWidth(info.get("line_width", 2))
+                    dummy.SetLineStyle(info.get("line_style", 1))
+                    self.legend.AddEntry(dummy, label, "l")
 
-            #     legend_dummies.append(dummy)  # keep reference
+                legend_dummies.append(dummy)  # keep reference
 
-            # # --- Total fit curve ---
-            # total_curve = self.model.plotOn(
-            #     frame,
-            #     RooFit.Range("fit"),
-            #     RooFit.LineColor(ROOT.kAzure + 4),
-            #     RooFit.LineWidth(4)
-            # )
-            # dummy = TLine(0,0,1,1)
-            # dummy.SetLineColor(ROOT.kAzure + 4)
-            # dummy.SetLineWidth(4)
-            # self.legend.AddEntry(dummy, "Total fit", "l")
-            # legend_dummies.append(dummy)  # keep reference
+            # --- Total fit curve ---
+            total_curve = self.model.plotOn(
+                frame,
+                RooFit.Range("fit"),
+                RooFit.LineColor(ROOT.kAzure + 4),
+                RooFit.LineWidth(4)
+            )
+            dummy = TLine(0,0,1,1)
+            dummy.SetLineColor(ROOT.kAzure + 4)
+            dummy.SetLineWidth(4)
+            self.legend.AddEntry(dummy, "Total fit", "l")
+            legend_dummies.append(dummy)  # keep reference
 
             # --- Canvas ---
             canvas = TCanvas("fit_canvas", "Fit Canvas", 600, 600)
@@ -1245,7 +1218,6 @@ class RawYieldFitter:
             if self.verbose:
                 logger(f"Adding Gaussian signal function", "INFO")
             if self.minimize_roofit:
-                print(f"Initializing Gaussian signal function with mean [{init_mass}, {init_mass - 0.02}, {init_mass + 0.02}] and sigma 0.015 for label {label}")
                 mu = ROOT.RooRealVar(f"mu_{label}", f"mean_{label}", init_mass, init_mass - 0.02, init_mass + 0.02)
                 sigma = ROOT.RooRealVar(f"sigma_{label}", f"sigma_{label}", 0.015, 0.005, 0.1)
                 self.fit_model[label]['par_mu'] = mu
