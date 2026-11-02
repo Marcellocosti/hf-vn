@@ -9,7 +9,7 @@ from os.path import join
 import argparse
 import numpy as np
 import yaml
-from ROOT import TCanvas, TFile, TLegend, TLine, gROOT, gPad # pylint: disable=import-error,no-name-in-module
+from ROOT import TCanvas, TFile, TLegend, TLine, gROOT, TLatex# pylint: disable=import-error,no-name-in-module
 sys.path.append('..')
 from StyleFormatter import SetGlobalStyle, SetObjectStyle, GetROOTColor, GetROOTMarker #pylint: disable=wrong-import-position,import-error
 from analysis_utils import ComputeRatioDiffBins, ScaleGraph, ComputeRatioGraph #pylint: disable=wrong-import-position,import-error
