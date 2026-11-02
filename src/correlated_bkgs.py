@@ -19,16 +19,18 @@ script_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(script_dir, '..', 'utils'))
 from utils import logger, get_centrality_bins, make_dir_root_file
 from corr_bkgs_brs import final_states
+from data_model import get_corr_bkg_rename
 from fit_utils import RebinHisto
-from ROOT import TFile, RooRealVar, RooDataSet, RooArgSet, RooKeysPdf, TFile, TH3F, TH1F
+from ROOT import TFile, RooRealVar, RooDataSet, RooArgSet, RooKeysPdf, TH1F, TH2F
+
 
 def get_rebinned_mass_sel_histo(histo, mass_min, mass_max, rebin):
     '''
     Get rebinned mass histogram and selection string
     '''
-    n_bins = int((mass_max - mass_min)*1000)
-    # n_bins = int((mass_max - mass_min)*1000)+1
-    new_histo = TH1F("histo_temp", "histo_temp", n_bins, mass_min, mass_max)
+    n_bins = int((mass_max - mass_min)*10000)
+    # n_bins = int((mass_max - mass_min)*10000)+1
+    new_histo = TH1F(f"histo_temp_{histo.GetName()}", "histo_temp", n_bins, mass_min, mass_max)
     for i_bin_new in range(1, new_histo.GetNbinsX()+1):
         bin_center = new_histo.GetBinCenter(i_bin_new)
         for i_bin_orig in range(1, histo.GetNbinsX()+1):
@@ -39,27 +41,34 @@ def get_rebinned_mass_sel_histo(histo, mass_min, mass_max, rebin):
     new_histo.SetDirectory(0)
     new_histo = RebinHisto(new_histo, rebin, True)
     integral = new_histo.Integral("width")
+    if integral <= 0:
+        logger(f"Empty template histogram {histo.GetName()} in [{mass_min}, {mass_max}], cannot normalize", "ERROR")
+        sys.exit(1)
     new_histo.Scale(1.0 / integral)
     return new_histo
+
 
 def get_corr_bkgs_from_reference(corr_bkgs_dict, raw_yields_file, pt_label, massMin, massMax, reb):
 
     ry_file = TFile(raw_yields_file, "READ")
-    templ_dir = f"{pt_label}/templs/"
-    hist_fracs = ry_file.Get(f"{templ_dir}/hTemplFracs")
+    templ_dir = f"{pt_label}/templs"
+    print(f"Reading correlated backgrounds from {raw_yields_file} in directory {templ_dir}")
+    hist_fracs = ry_file.Get(f"{pt_label}/hist_templ_fracs_{pt_label}")
+    hist_n_entries = ry_file.Get(f"{pt_label}/hist_templ_n_entries_{pt_label}")
     for i_bin in range(1, hist_fracs.GetNbinsX()+1):
         chn = hist_fracs.GetXaxis().GetBinLabel(i_bin)
         frac = hist_fracs.GetBinContent(i_bin)
-        corr_bkgs_dict[chn] = {"frac": frac}
-        histo_chn = ry_file.Get(f"{templ_dir}/hTempl_{chn}_raw")
+        n_entries = hist_n_entries.GetBinContent(i_bin)
+        corr_bkgs_dict[chn] = {"frac": frac, "n_entries": n_entries}
+        histo_chn = ry_file.Get(f"{pt_label}/templs/{chn}/histo_{chn}")
         histo_chn.SetDirectory(0)
-        histo_rebin_mass_range = get_rebinned_mass_sel_histo(histo_chn, massMin, massMax, reb)
-        corr_bkgs_dict[chn]["histo"] = histo_rebin_mass_range
+        corr_bkgs_dict[chn]["histo"] = histo_chn
     ry_file.Close()
     return corr_bkgs_dict
 
+
 def get_corr_bkg(corr_bkg_file, corr_bkg_chn, sel_string, pt_label, templ_type, output_type,
-                 corr_abundances=False, sgn_d_meson='Dplus', get_smoothed=True, **kwargs):
+                 project=True, corr_abundances=False, sgn_d_meson='Dplus', get_smoothed=True, **kwargs):
     '''
     Get correlated background template and normalization factor
     '''
@@ -92,6 +101,19 @@ def get_corr_bkg(corr_bkg_file, corr_bkg_chn, sel_string, pt_label, templ_type, 
     templ_rdataframe_full = ROOT.RDataFrame(full_tree)
     if kwargs.get("verbose", False):
         print(f"Entries before sel: {templ_rdataframe_full.Count().GetValue()}")
+
+    # Project the columns of the filtered RDataFrame into histograms
+    templ_rdataframe_sel = templ_rdataframe_full.Filter(sel_string)
+    proj_cols = {}
+    if project:
+        for col in templ_rdataframe_sel.GetColumnNames():
+            print(f"Projecting column {col} for correlated bkg source {corr_bkg_chn}")
+            col = str(col)
+            histo_proj = templ_rdataframe_sel.Histo1D(col, col)
+            histo_proj.GetValue()
+            histo_proj.SetDirectory(0)
+            proj_cols[col] = histo_proj
+
     n_entries = templ_rdataframe_full.Filter(sel_string).Count().GetValue()
     if kwargs.get("verbose", False):
         logger(f"Entries after sel '{sel_string}': {n_entries} for correlated bkg source {corr_bkg_chn}", "INFO")
@@ -407,29 +429,25 @@ def produce_df(cfg):
 
 def produce_corr_bkgs_templs(cfg):
 
-    tables = [[] for _ in cfg["table_names"]]
-    for file_name in cfg["input_files"]:
-        logger(f"Reading file {file_name} for correlated bkg template production", "INFO")
-        with uproot.open(file_name) as f:
-            for table_name, table_list, table_cols_to_keep in zip(
-                cfg["table_names"],
-                tables,
-                cfg["table_cols_to_keep"]
-            ):
-                for key in f.keys():
-                    if table_name in key:
-                        dfData = f[key].arrays(table_cols_to_keep, library='pd')
-                        table_list.append(dfData)
+    # Either from TreeCreator or DerivedDataCreator
+    full_df = produce_df(cfg)
+    print(f"Initial candidates: {len(full_df)}")
+    unique_mc_origins = full_df['fFlagMcMatchRec'].unique()
+    print(f"Unique entries of 'fFlagMcMatchRec' in the pt-selected DataFrame: {sorted(unique_mc_origins)}")
 
-    # Now concatenate per table
-    full_dfs = [
-        pd.concat(table_list, ignore_index=True)
-        for table_list in tables
-    ]
-    full_df = pd.concat(full_dfs, axis=1)
+    for table_name in cfg["table_names"]:
+        rename_map = get_corr_bkg_rename(table_name)
+        if rename_map:
+            logger(f"Renaming columns of {table_name}: {rename_map}", "INFO")
+            full_df = full_df.rename(columns=rename_map)
 
     ### Centrality selection
     _, (centMin, centMax) = get_centrality_bins(cfg["centrality"])
+
+    if "fCentrality" not in full_df.columns:
+        logger(f"No centrality column in input, assuming the sample is already restricted "
+               f"to {centMin}-{centMax}%", "WARNING")
+        full_df["fCentrality"] = 0.5 * (centMin + centMax)
 
     cent_sel_df = full_df.query(f"fCentrality >= {centMin} and fCentrality < {centMax}")
     logger(f"Initial candidates: {len(full_df)} ----> after cent selection: {len(cent_sel_df)}", "INFO")
