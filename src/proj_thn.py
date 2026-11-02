@@ -108,7 +108,8 @@ def proj_data(i_bin, sparse, axes, resolution, proj_cfg, writeopt):
         hist_var.Write(f'h{var.capitalize()}Data', writeopt)
 
     hist_vn_sp = get_vn_versus_mass(sparse, proj_cfg['VnVsMassBins'][i_bin], axes['FlowSP']['Mass'], axes['FlowSP']['Sp'])
-    hist_vn_sp.Scale(1/resolution) # Correct for resolution
+    if resolution is not None:
+        hist_vn_sp.Scale(1/resolution) # Correct for resolution
     hist_vn_sp.Write('hVnVsMassData', writeopt)
 
     # Save a TH2 of (Mass, Sp) for the multitrial systematic
@@ -241,6 +242,8 @@ def get_pt_weights(cfgProj):
 
     if cfgProj.get('ApplyPtWeightsCharm'):
         hPtWeightsD = ptWeightsFile.Get('FONLLtimesTAMU/charm/hPtWeightsCharmFONLLtimesTAMUcent')
+    elif cfgProj.get('ApplyPtWeightsD'):
+        hPtWeightsD = ptWeightsFile.Get('hPtWeightsFONLLtimesLangevinDcent')
         ptBinCentersD = [ (hPtWeightsD.GetBinLowEdge(i)+hPtWeightsD.GetBinLowEdge(i+1))/2 for i in range(1, hPtWeightsD.GetNbinsX()+1)]
         ptBinContentsD = [hPtWeightsD.GetBinContent(i) for i in range(1, hPtWeightsD.GetNbinsX()+1)]
         sPtWeights = make_interp_spline(ptBinCentersD, ptBinContentsD)
@@ -250,6 +253,8 @@ def get_pt_weights(cfgProj):
 
     if cfgProj.get('ApplyPtWeightsBeauty'):
         hPtWeightsB = ptWeightsFile.Get('FONLLtimesTAMU/beauty/hPtWeightsBeautyFONLLtimesTAMUBcent')
+    elif cfgProj.get('ApplyPtWeightsB'):
+        hPtWeightsB = ptWeightsFile.Get('hPtWeightsFONLLtimesLangevinBcent')
         ptBinCentersB = [ (hPtWeightsB.GetBinLowEdge(i)+hPtWeightsB.GetBinLowEdge(i+1))/2 for i in range(1, hPtWeightsB.GetNbinsX()+1)]
         ptBinContentsB = [hPtWeightsB.GetBinContent(i) for i in range(1, hPtWeightsB.GetNbinsX()+1)]
         sPtWeightsB = make_interp_spline(ptBinCentersB, ptBinContentsB)
@@ -350,7 +355,7 @@ if __name__ == "__main__":
     if operations.get("proj_mc"):
         sPtWeightsD, sPtWeightsB, Bspeciesweights = get_pt_weights(config["projections"]) if config['projections'].get('PtWeightsFile') else (None, None, None)
 
-    if operations.get("proj_data"):
+    if operations.get("proj_data") and resolution is not None:
         outfile.cd()
         reso_hist.Write("hResolution", write_opt_data)
         resolution = reso_hist.GetBinContent(1)

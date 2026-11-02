@@ -15,7 +15,8 @@ os.environ['CUDA_VISIBLE_DEVICES'] = '-1'
 import tensorflow as tf
 tf.config.threading.set_intra_op_parallelism_threads(1)
 tf.config.threading.set_inter_op_parallelism_threads(1)
-sys.path.append(f"{os.path.dirname(os.path.abspath(__file__))}/../flareflyfitter/")
+SCRIPTS_DIR = PATH.Path(__file__).parent
+sys.path.append((PATH.Path(SCRIPTS_DIR) / ".." / "flareflyfitter").as_posix())
 from raw_yield_fitter import RawYieldFitter
 import matplotlib
 matplotlib.use('Agg')
