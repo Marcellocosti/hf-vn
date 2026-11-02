@@ -7,7 +7,10 @@
 GAIN_EQ=false
 Q_VEC=false
 QA_PLOTS=false
-LOAD_CCDB=false
+LOAD_CCDB_GAIN=false
+LOAD_CCDB_SP=false
+LOAD_CCDB_ESE=false
+APASS=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -23,13 +26,21 @@ while [[ $# -gt 0 ]]; do
             QA_PLOTS=true
             shift
             ;;
-        --ccdb)
-            LOAD_CCDB=true
+        --ccdb_gain)
+            LOAD_CCDB_GAIN=true
+            shift
+            ;;
+        --ccdb_sp)
+            LOAD_CCDB_SP=true
+            shift
+            ;;
+        --ccdb_ese)
+            LOAD_CCDB_ESE=true
             shift
             ;;
         *)
             echo "Unknown option: $1"
-            echo "Usage: $0 [--gain] [--qvec] [--qa] [--ccdb]"
+            echo "Usage: $0 [--gain] [--qvec] [--qa] [--ccdb_gain] [--ccdb_sp] [--ccdb_ese]"
             exit 1
             ;;
     esac
@@ -38,19 +49,28 @@ done
 echo "GAIN_EQ   = $GAIN_EQ"
 echo "Q_VEC     = $Q_VEC"
 echo "QA_PLOTS  = $QA_PLOTS"
-echo "LOAD_CCDB = $LOAD_CCDB"
+echo "LOAD_CCDB_GAIN = $LOAD_CCDB_GAIN"
+echo "LOAD_CCDB_SP   = $LOAD_CCDB_SP"
+echo "LOAD_CCDB_ESE  = $LOAD_CCDB_ESE"
 
 # ==============================================================================
 # CONFIGURATION
 # ==============================================================================
 
-INPUT_FILE="run_sor_eor_pbpb_2025.txt"
+INPUT_FILE="/home/mdicosta/alice/hf-vn/calibqvec/run_sor_eor_oo_2025.txt"
 
-export OUTDIR="/home/mdicosta/DMesonEsE/RedQCalib/2025_pass1"
-export INDIR="/data/mdicosta/DplusFlow/EsE/Train687991"
+export OUTDIR="/home/mdicosta/DFlowOO/Paper/MCClosure/QVecCalib_test"
+export INDIR_GAIN="/home/mdicosta/DFlowOO/Paper/MCClosure/TrainsGainEqCalib/BTOT_FT0C_FT0A___FV0A_FT0A_FT0M/Train747387/"
+export INDIR_QVECCORR="/dummy/path/"
+
+# Create output directory
+mkdir -p "$OUTDIR"
+
+# Copy this file to the output directory for reference
+cp "$0" "$OUTDIR/$(basename "$0")"
 
 # Number of simultaneous ROOT jobs
-N_JOBS=8
+N_JOBS=1
 
 # ==============================================================================
 # BLOCK 1: GAIN EQUALISATION
@@ -66,7 +86,7 @@ run_gain_equalisation_corrections() {
 
     root -b -l <<EOF
 gSystem->Load("calibGain_C.so");
-calibGain("$OUTDIR", "$INDIR", $run, true);
+calibGain("$OUTDIR", "$INDIR_GAIN", $run, true);
 .q
 EOF
 }
@@ -80,7 +100,7 @@ if [ "$GAIN_EQ" = true ]; then
 
     root -b -l <<'EOF'
 gSystem->SetBuildDir(".", kTRUE);
-gSystem->CompileMacro("calibGain.C","kO");
+gSystem->CompileMacro("/home/mdicosta/alice/hf-vn/calibqvec/calibGain.C","kO");
 .q
 EOF
 
@@ -104,24 +124,24 @@ run_qvec_corrections() {
     root -b -l <<EOF
 gSystem->Load("calibQVecs_C.so");
 
-calibQVecs("$OUTDIR", "$INDIR", $run,
-           "_id54810", "RefB",
-           "_id54810", "RefA",
-           "_id54812", "RefB",
-           "_id54812", "",
-           "_id54811", "RefA",
-           "_id54811", "RefB",
-           "_id54810", "",
+calibQVecs("$OUTDIR", "$INDIR_QVECCORR", $run,
+           "_id60252", "RefA",
+           "_id60251", "",
+           "_id60252", "RefB",
+           "_id60252", "",
+           "_id60251", "RefA",
+           "_id60251", "RefB",
+           "_id60250", "",
            true);
 
-calibQVecs("$OUTDIR", "$INDIR", $run,
-           "_id54810", "RefB",
-           "_id54810", "RefA",
-           "_id54812", "RefB",
-           "_id54812", "",
-           "_id54811", "RefA",
-           "_id54811", "RefB",
-           "_id54810", "",
+calibQVecs("$OUTDIR", "$INDIR_QVECCORR", $run,
+           "_id60252", "RefA",
+           "_id60251", "",
+           "_id60252", "RefB",
+           "_id60252", "",
+           "_id60251", "RefA",
+           "_id60251", "RefB",
+           "_id60250", "",
            false);
 
 .q
@@ -137,7 +157,7 @@ if [ "$Q_VEC" = true ]; then
 
     root -b -l <<'EOF'
 gSystem->SetBuildDir(".", kTRUE);
-gSystem->CompileMacro("calibQVecs.C","kO");
+gSystem->CompileMacro("/home/mdicosta/alice/hf-vn/calibqvec/calibQVecs.C","kO");
 .q
 EOF
 
@@ -158,7 +178,7 @@ if [ "$QA_PLOTS" = true ]; then
 
     root -b -l <<'EOF'
 gSystem->SetBuildDir(".", kTRUE);
-gSystem->CompileMacro("produceQa.C","kO");
+gSystem->CompileMacro("/home/mdicosta/alice/hf-vn/calibqvec/produceQa.C","kO");
 .q
 EOF
 
@@ -179,6 +199,16 @@ load_run_corrections_to_ccdb() {
     local run=$1
     local sor=$2
     local eor=$3
+    local load_gain=$4
+    local load_sp=$5
+    local load_ese=$6
+    local apass=$7
+
+    # Check that apass != ""
+    if [ -z "$apass" ]; then
+        echo "Error: 'apass' is empty, cannot load to CCDB without specifying an apass."
+        return 1
+    fi
 
     echo "CCDB Upload -> RUN=$run"
 
@@ -190,17 +220,18 @@ loadCorrectionsToCCDB(
     $run,
     $sor,
     $eor,
-    "Users/m/mdicosta/QVecCalib/2025_pass1_v1",
-    true,
-    true,
-    false);
+    "Users/m/mdicosta/QVecCalib/LHC25j10_v1",
+    $load_gain,
+    $load_sp,
+    $load_ese,
+    "$apass");
 
 .q
 EOF
 }
 export -f load_run_corrections_to_ccdb
 
-if [ "$LOAD_CCDB" = true ]; then
+if [ "$LOAD_CCDB_GAIN" = true ] || [ "$LOAD_CCDB_SP" = true ] || [ "$LOAD_CCDB_ESE" = true ]; then
 
     echo "================================================="
     echo "Uploading corrections to CCDB"
@@ -208,13 +239,13 @@ if [ "$LOAD_CCDB" = true ]; then
 
     root -b -l <<'EOF'
 gSystem->SetBuildDir(".", kTRUE);
-gSystem->CompileMacro("loadCorrectionsToCCDB.C","kO");
+gSystem->CompileMacro("/home/mdicosta/alice/hf-vn/calibqvec/loadCorrectionsToCCDB.C","kO");
 .q
 EOF
 
     tail -n +2 "$INPUT_FILE" | \
         parallel -j ${N_JOBS} --colsep '\s+' \
-        load_run_corrections_to_ccdb {1} {2} {3}
+        load_run_corrections_to_ccdb {1} {2} {3} ${LOAD_CCDB_GAIN} ${LOAD_CCDB_SP} ${LOAD_CCDB_ESE} ${APASS}
 fi
 
 echo
