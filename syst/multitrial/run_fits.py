@@ -43,6 +43,7 @@ def main():
     all_tasks = []
     for yaml_file in args.yaml_files:
         trial_dir = os.path.dirname(yaml_file)
+        print(f"Processing trial directory: {trial_dir}, reference_dir: {args.reference_dir}")
         proj_dir = os.path.join(trial_dir, "projs")
         # check if proj_dir exists
         if not os.path.exists(proj_dir):

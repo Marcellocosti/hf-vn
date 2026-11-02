@@ -2,7 +2,7 @@ import sys
 import os
 from ROOT import TFile # pyright: ignore # type: ignore
 sys.path.append("./")
-from utils import logger, get_centrality_bins
+from utils import logger
 
 def get_pt_preprocessed_sparses(config, pt_label):
     """ Load preprocessed sparses for a given pt bin label from the preprocess output files.

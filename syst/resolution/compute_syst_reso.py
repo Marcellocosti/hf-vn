@@ -255,6 +255,7 @@ def compute_cent_diff_rys(config, i_pt, pt_min, pt_max, bkg_max, cent_intervals)
     results = {'raw_yields': [], 'raw_yields_uncs': [], 'cent_intervals': []}
     for i_cent, (cmin, cmax) in enumerate(zip(cent_intervals[:-1], cent_intervals[1:])):
         cent_str = f"cent_{cmin}_{cmax}"
+        fitter.set_name(f"{config['Dmeson']}_{pt_str}_{cent_str}")
         if config.get('UseSparses'):
             sparse_flow.GetAxis(axes_flow['Cent']).SetRangeUser(cmin, cmax)
             h_mass = sparse_flow.Projection(axes_flow['Mass'])
