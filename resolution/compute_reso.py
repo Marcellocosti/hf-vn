@@ -156,6 +156,7 @@ if __name__ == "__main__":
                         default=".", help="output directory")
     parser.add_argument("--suffix", "-s", metavar="text",
                         default="", help="suffix for output files")
+    parser.add_argument("--batch", "-b", action='store_true', help="run in batch mode")
     args = parser.parse_args()
 
     _, cent_min_max = get_centrality_bins(args.centClass)
@@ -240,4 +241,5 @@ if __name__ == "__main__":
         outfile.cd('..')
     outfile.Close()
 
-    input('Resolutions computed. Press any key to continue')
+    if not args.batch:
+        input('Resolutions computed. Press any key to continue')
