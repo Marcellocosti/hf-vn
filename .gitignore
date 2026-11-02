@@ -2,7 +2,7 @@
 **/.vscode/
 **/config/
 **/__pycache__/
-**/resolution/reso*
+**/resolution_deprecated/reso*
 ptweights/weights/
 mltraining/models/
 
