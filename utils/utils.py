@@ -3,6 +3,7 @@ import os
 import sys
 import ROOT
 import ctypes
+from array import array
 from ROOT import TH1, TH1D, TFile
 import numpy as np
 from pypdf import PdfReader, PdfWriter, Transformation
@@ -12,8 +13,8 @@ import yaml
 def merge_cutsets_fits(fits_dir, verbose=True):
 
     all_fit_pdfs = sorted(
-        [p for p in fits_dir.glob("*.pdf")],
-        key=lambda p: int(p.stem.split('_')[2])
+        fits_dir.glob("raw_yields_*.pdf"),
+        key=lambda p: int(p.stem.split('_')[-1])
     )
 
     if not all_fit_pdfs:
@@ -101,23 +102,21 @@ def produce_pt_bins_fit_summary(fits_dir, config_path):
     pt_bins = cfg['ptbins']
 
     all_fit_root_files = sorted(
-        [p for p in fits_dir.glob("*.root")],
-        key=lambda p: int(p.stem.split('_')[2])
+        fits_dir.glob("raw_yields_*.root"),
+        key=lambda p: int(p.stem.split('_')[-1])
     )
 
     total_cutsets = len(all_fit_root_files)
 
     summary = {}
     for pt_min, pt_max in zip(pt_bins[:-1], pt_bins[1:]):
-        pt_str = f"pt_{int(pt_min*10)}_{int(pt_max*10)}"
+        pt_str = f"pt_{int(pt_min*100)}_{int(pt_max*100)}"
         summary[pt_str] = {}
 
     # Pick first ROOT file, so that the structure of the dictionaries
     # can be defined (the fit function can change)
-
-    # print(f"Opened first fit file: {first_fit_file}")
     for pt_min, pt_max in zip(pt_bins[:-1], pt_bins[1:]):
-        pt_str = f"pt_{int(pt_min*10)}_{int(pt_max*10)}"
+        pt_str = f"pt_{int(pt_min*100)}_{int(pt_max*100)}"
         try:
             input_file = TFile(str(all_fit_root_files[0]), "READ")
             hist_fit_pars = input_file.Get(f"{pt_str}/hist_sim_fit")
@@ -138,17 +137,17 @@ def produce_pt_bins_fit_summary(fits_dir, config_path):
         for i_bin in range(hist_fit_pars.GetNbinsX()):
             par_name = hist_fit_pars.GetXaxis().GetBinLabel(i_bin + 1)
             summary[pt_str][f"Hist{par_name}"] = \
-                TH1D(f"{pt_str}_{par_name}", f"{pt_str}_{par_name}", total_cutsets + 1, -0.5, total_cutsets + 0.5)
+                TH1D(f"{pt_str}_{par_name}", f"{pt_str}_{par_name}", total_cutsets, -0.5, total_cutsets - 0.5)
             summary[pt_str][f"Hist{par_name}"].SetDirectory(0)
             summary[pt_str][f"Hist{par_name}Unc"] = \
-                TH1D(f"{pt_str}_{par_name}Unc", f"{pt_str}_{par_name} Uncertainty;Cutset;Fit Unc.", total_cutsets + 1, -0.5, total_cutsets + 0.5)
+                TH1D(f"{pt_str}_{par_name}Unc", f"{pt_str}_{par_name} Uncertainty;Cutset;Fit Unc.", total_cutsets, -0.5, total_cutsets - 0.5)
             summary[pt_str][f"Hist{par_name}Unc"].SetDirectory(0)
         input_file.Close()
 
     for i_cutset, fit_file_path in enumerate(all_fit_root_files):
         fit_file = TFile(str(fit_file_path), "READ")
         for pt_min, pt_max in zip(pt_bins[:-1], pt_bins[1:]):
-            pt_str = f"pt_{int(pt_min*10)}_{int(pt_max*10)}"
+            pt_str = f"pt_{int(pt_min*100)}_{int(pt_max*100)}"
             try:
                 hist_fit_pars = fit_file.Get(f"{pt_str}/hist_sim_fit")
                 for i_bin in range(hist_fit_pars.GetNbinsX()):
@@ -164,12 +163,92 @@ def produce_pt_bins_fit_summary(fits_dir, config_path):
                 summary[pt_str][f"Hist{par_name}"].SetBinError(i_cutset + 1, 0)
                 summary[pt_str][f"Hist{par_name}Unc"].SetBinContent(i_cutset + 1, 0)
 
+    # Summary of correlated bkg fractions and entries
+    corr_bkgs_summary, corr_bkgs_histos = None, None
+    if cfg.get('corr_bkgs'):
+        corr_bkgs_summary, corr_bkgs_histos = {}, {}
+
+        # All channels appearing in any cocktail
+        all_corr_bkgs_channels = {
+            chn for cocktail in cfg['corr_bkgs']['cocktails'] for chn in cocktail['channels']
+        }
+
+        # Initialize the complete pT x channel x cutset grid to zero
+        for pt_min, pt_max in zip(pt_bins[:-1], pt_bins[1:]):
+            pt_str = f"pt_{int(pt_min*100)}_{int(pt_max*100)}"
+            corr_bkgs_summary[pt_str] = {
+                chn: {'fracs': [0.] * total_cutsets, 'n_entries': [0.] * total_cutsets}
+                for chn in all_corr_bkgs_channels
+            }
+
+        # Fill the cells for which the correlated-bkg histogram actually exists
+        for i_cutset, fit_file_path in enumerate(all_fit_root_files):
+            fit_file = TFile(str(fit_file_path), "READ")
+            for pt_min, pt_max in zip(pt_bins[:-1], pt_bins[1:]):
+                pt_str = f"pt_{int(pt_min*100)}_{int(pt_max*100)}"
+                histo_fracs = fit_file.Get(f"{pt_str}/hist_templ_fracs_{pt_str}")
+                histo_n_entries = fit_file.Get(f"{pt_str}/hist_templ_n_entries_{pt_str}")
+                if not isinstance(histo_fracs, TH1) or not isinstance(histo_n_entries, TH1):
+                    continue
+
+                for i_bin in range(histo_fracs.GetNbinsX()):
+                    chn = histo_fracs.GetXaxis().GetBinLabel(i_bin + 1)
+                    if chn not in corr_bkgs_summary[pt_str]:
+                        continue
+                    corr_bkgs_summary[pt_str][chn]['fracs'][i_cutset] = histo_fracs.GetBinContent(i_bin + 1)
+                    corr_bkgs_summary[pt_str][chn]['n_entries'][i_cutset] = histo_n_entries.GetBinContent(i_bin + 1)
+
+        # Produce fraction/entries histograms vs pT for each cutset
+        pt_bins_array = array('d', pt_bins)
+        for chn in all_corr_bkgs_channels:
+            for i_cutset in range(total_cutsets):
+                h_frac = TH1D(
+                    f"h_frac_pt_{chn}_cutset_{i_cutset}", f"{chn};pT;Fraction",
+                    len(pt_bins) - 1, pt_bins_array
+                )
+                h_entries = TH1D(
+                    f"h_entries_pt_{chn}_cutset_{i_cutset}", f"{chn};pT;Entries",
+                    len(pt_bins) - 1, pt_bins_array
+                )
+                for i, pt_str in enumerate(corr_bkgs_summary):
+                    h_frac.SetBinContent(i + 1, corr_bkgs_summary[pt_str][chn]['fracs'][i_cutset])
+                    h_entries.SetBinContent(i + 1, corr_bkgs_summary[pt_str][chn]['n_entries'][i_cutset])
+                corr_bkgs_histos[h_frac.GetName()] = h_frac
+                corr_bkgs_histos[h_entries.GetName()] = h_entries
+
+            # Produce fraction/entries histograms vs cutset for each pT bin
+            for pt_str in corr_bkgs_summary:
+                h_frac = TH1D(
+                    f"h_frac_cutset_{chn}_{pt_str}", f"{chn};Cutset;Fraction",
+                    total_cutsets, -0.5, total_cutsets - 0.5
+                )
+                h_entries = TH1D(
+                    f"h_entries_cutset_{chn}_{pt_str}", f"{chn};Cutset;Entries",
+                    total_cutsets, -0.5, total_cutsets - 0.5
+                )
+                for i_cutset in range(total_cutsets):
+                    h_frac.SetBinContent(i_cutset + 1, corr_bkgs_summary[pt_str][chn]['fracs'][i_cutset])
+                    h_entries.SetBinContent(i_cutset + 1, corr_bkgs_summary[pt_str][chn]['n_entries'][i_cutset])
+                corr_bkgs_histos[h_frac.GetName()] = h_frac
+                corr_bkgs_histos[h_entries.GetName()] = h_entries
+
     summary_file = TFile.Open(f"{fits_dir}/FitSummary.root", "RECREATE")
     for pt_bin, pt_summary in summary.items():
         summary_file.mkdir(pt_bin)
         summary_file.cd(pt_bin)
         for hist_name, hist in pt_summary.items():
             hist.Write(hist_name)
+    if corr_bkgs_histos:
+        summary_file.mkdir("corr_bkgs")
+        for chn in next(iter(corr_bkgs_summary.values())):
+            summary_file.mkdir(f"corr_bkgs/{chn}")
+            summary_file.cd(f"corr_bkgs/{chn}")
+            for hist_name in [f"h_frac_pt_{chn}_cutset_{i_cutset}" for i_cutset in range(total_cutsets)] + \
+                             [f"h_entries_pt_{chn}_cutset_{i_cutset}" for i_cutset in range(total_cutsets)] + \
+                             [f"h_frac_cutset_{chn}_pt_{int(pt_min*100)}_{int(pt_max*100)}" for pt_min, pt_max in zip(pt_bins[:-1], pt_bins[1:])] + \
+                             [f"h_entries_cutset_{chn}_pt_{int(pt_min*100)}_{int(pt_max*100)}" for pt_min, pt_max in zip(pt_bins[:-1], pt_bins[1:])]:
+                histo = corr_bkgs_histos[hist_name]
+                histo.Write(hist_name)
 
     summary_file.Close()
 
@@ -242,8 +321,9 @@ def profile_mass_sp(hist_mass_sp, vn_vs_mass_bins, resolution):
         profile = hist_mass_sp.ProfileY(f'profile_{bin_low}_{bin_high}', bin_low, bin_high)
         mean_sp = profile.GetMean()
         mean_sp_err = profile.GetMeanError()
-        hist_vn_vs_mass.SetBinContent(i+1, mean_sp / resolution)
-        hist_vn_vs_mass.SetBinError(i+1, mean_sp_err / resolution)
+        if resolution is not None and resolution != 0:
+            hist_vn_vs_mass.SetBinContent(i+1, mean_sp / resolution)
+            hist_vn_vs_mass.SetBinError(i+1, mean_sp_err / resolution)
     return hist_vn_vs_mass
 
 def get_vn_versus_mass(sparse, vn_vs_mass_bins, mass_axis, vn_axis, debug=False):
@@ -597,7 +677,7 @@ def get_refl_histo(reflFile, ptMins, ptMaxs):
     
     reflFile = TFile(reflFile, 'READ')
     for iPt, (ptMin, ptMax) in enumerate(zip(ptMins, ptMaxs)):
-        ptMinSuf, ptMaxSuf = int(ptMin*10), int(ptMax*10)
+        ptMinSuf, ptMaxSuf = int(ptMin*100), int(ptMax*100)
         dirName = f'pt_{ptMinSuf}_{ptMaxSuf}'
         if not reflFile.GetDirectory(dirName):
             logger(f'No directory {dirName} found! Turning off reflections usage', level='ERROR')
