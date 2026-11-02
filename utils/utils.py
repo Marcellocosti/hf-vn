@@ -243,8 +243,9 @@ def profile_mass_sp(hist_mass_sp, VnVsMassBins, resolution):
         profile = hist_mass_sp.ProfileY(f'profile_{bin_low}_{bin_high}', bin_low, bin_high)
         mean_sp = profile.GetMean()
         mean_sp_err = profile.GetMeanError()
-        hist_vn_vs_mass.SetBinContent(i+1, mean_sp / resolution)
-        hist_vn_vs_mass.SetBinError(i+1, mean_sp_err / resolution)
+        if resolution is not None and resolution != 0:
+            hist_vn_vs_mass.SetBinContent(i+1, mean_sp / resolution)
+            hist_vn_vs_mass.SetBinError(i+1, mean_sp_err / resolution)
     return hist_vn_vs_mass
 
 def get_vn_versus_mass(sparse, VnVsMassBins, mass_axis, vn_axis, debug=False):
@@ -458,6 +459,7 @@ def get_vnfitter_results(vnFitter, useRefl, useTempl, secPeak, secPeakWidthFrac=
         vn_results['fMassBkgRflFunc'] = vnFitter.GetMassBkgRflFunc()
     
     if useTempl:
+        vn_results['fMassTemplFuncts'] = list(vnFitter.GetMassTemplFuncts())
         vn_results['vnTemplates'] = list(vnFitter.GetVnTemplates())
         vn_results['vnTemplatesUncs'] = list(vnFitter.GetVnTemplatesUncertainties())
 
@@ -597,7 +599,7 @@ def get_refl_histo(reflFile, ptMins, ptMaxs):
     
     reflFile = TFile(reflFile, 'READ')
     for iPt, (ptMin, ptMax) in enumerate(zip(ptMins, ptMaxs)):
-        ptMinSuf, ptMaxSuf = int(ptMin*10), int(ptMax*10)
+        ptMinSuf, ptMaxSuf = int(ptMin*100), int(ptMax*100)
         dirName = f'pt_{ptMinSuf}_{ptMaxSuf}'
         if not reflFile.GetDirectory(dirName):
             logger(f'No directory {dirName} found! Turning off reflections usage', level='ERROR')
@@ -691,6 +693,13 @@ def get_centrality_bins(centrality):
     else:
         print(f"ERROR: cent class \'{centrality}\' is not supported! Exit")
     sys.exit()
+
+def get_ese_band_label(p_lo, p_hi):
+    """Label for an ESE q2 percentile band. Shared by all ESE scripts."""
+    p_lo, p_hi = int(p_lo), int(p_hi)
+    if not 0 <= p_lo < p_hi <= 100:
+        raise ValueError(f"Invalid ESE percentiles [{p_lo}, {p_hi}]: need 0 <= lo < hi <= 100")
+    return f'q2_{p_lo}_{p_hi}'
 
 def suggest_skip_cuts(hRawYields, hEffPrompt, hEffFD, nPtBins):
     """Suggest cuts to skip based on zero or negative efficiencies or raw yields"""

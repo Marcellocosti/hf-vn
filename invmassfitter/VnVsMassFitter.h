@@ -163,6 +163,14 @@ public:
   // }
   void SetHarmonic(Int_t harmonic=2) {fHarmonic=harmonic;}
   void SetSuppressOutput(Bool_t suppress) {fSuppressOutput=suppress;}
+  void SetParticle(std::string particle) {fParticle=particle;}
+
+  // Double-sided crystal ball functions
+  Double_t LeftCBPDF(double x, double mu, double sigma, double a, double n);
+  Double_t DoubleSidedCBAsymmPDF(double x, double mu, double sigma, double a1, double n1, double a2, double n2);
+  Double_t DoubleSidedCBSymmPDF(double x, double mu, double sigma, double a, double n);
+
+  TH1F *GetPullDistribution();
 
   // Double-sided crystal ball functions
   Double_t LeftCBPDF(double x, double mu, double sigma, double a, double n);

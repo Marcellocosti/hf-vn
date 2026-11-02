@@ -270,6 +270,9 @@ Bool_t DhCorrelationExtraction::ExtractCorrelations()
     // Retrieve 2D plots for SE and ME, signal and bkg regions, for each pTbin and pool
     hSE_2D_Raw[iPool] = ProjCorrelHisto(kSE, iPool);
     hME_2D_Raw[iPool] = ProjCorrelHisto(kME, iPool);
+    hSE_2D_Raw[iPool]->Sumw2();
+    hME_2D_Raw[iPool]->Sumw2();
+
 
     hME_2D_Normalized[iPool] = reinterpret_cast<TH2D*>(hME_2D_Raw[iPool]->Clone(Form("hNormalizedCorrel_ME_2D_Pool%d", iPool)));
     // Normalize ME plots for the entries in (deltaEta, deltaPhi) = (0, 0)
@@ -277,7 +280,7 @@ Bool_t DhCorrelationExtraction::ExtractCorrelations()
 
     // Apply Event Mixing Correction
     hCorrectedCorrel_2D[iPool] = reinterpret_cast<TH2D*>(hSE_2D_Raw[iPool]->Clone(Form("hCorrectedCorrel_2D_Pool%d", iPool)));
-    // hCorrectedCorrel_2D[iPool]->Sumw2();
+    hCorrectedCorrel_2D[iPool]->Sumw2();
     hCorrectedCorrel_2D[iPool]->Divide(hME_2D_Normalized[iPool]);
 
     // Apply the ME correction on the Mass by the ratio of SE/ME integrated over deltaPhi bins for each deltaEta bin
@@ -561,7 +564,11 @@ TH2D* DhCorrelationExtraction::ProjCorrelHisto(Int_t SEorME, Int_t pool)
     }
   }
 
-  if (fMethod == kDeltaPhiBinning) {
+  // fPoolVec_RawMassVsDeltaEta_2D is consumed per pool as the SE raw mass vs deltaEta
+  // (see AnalyzeCorrelations: fPoolVec_RawMassVsDeltaEta_2D[iPool]->ProjectionY(...)),
+  // so only the SE projection may be pushed: pushing the ME one as well would interleave
+  // [SE0, ME0, SE1, ME1, ...] and break the pool indexing for iPool >= 1.
+  if (fMethod == kDeltaPhiBinning && SEorME == kSE) {
     TString titleMass = Form("Raw Mass vs DeltaEta with |#Delta#eta| > %.1f for Pool %s", fDeltaEtaRightMin, poolStr.Data());
     fPoolVec_RawMassVsDeltaEta_2D.push_back(SetTH2HistoStyle(reinterpret_cast<TH2D*>(hFinalMass->Clone(titleMass)),
       Form("hRaw_MassVsDeltaEta_SE_2D_Pool%s", poolStr.Data()), "#Delta#eta", "Mass (GeV/#it{c}^{2})", "Counts"));
@@ -631,8 +638,11 @@ TH1D* DhCorrelationExtraction::CorrectedPairsMassDistr(TH2D* hRawSE, TH2D* hCorr
   Int_t binDeltaEtaRightMax = hRawSE->GetXaxis()->FindBin(fDeltaEtaRightMax - 0.01);
   Int_t nBinDeltaEta = hCorrectedCorrel->GetXaxis()->GetNbins();
 
-  Int_t binDeltaPhiMin = hRawSE->GetYaxis()->FindBin(fDeltaPhiBins.front());
-  Int_t binDeltaPhiMax = hRawSE->GetYaxis()->FindBin(fDeltaPhiBins.back());
+  // NB: FindBin() puts a value that sits exactly on a bin's upper edge into the bin ABOVE it,
+  // so the window edges must be pulled 1e-6 inside the bin (same idea as the +-0.01 nudge used
+  // for deltaEta just above); otherwise the SE/ME ratio is integrated over one extra deltaPhi bin.
+  Int_t binDeltaPhiMin = hRawSE->GetYaxis()->FindBin(fDeltaPhiBins.front() + 1e-6);
+  Int_t binDeltaPhiMax = hRawSE->GetYaxis()->FindBin(fDeltaPhiBins.back() - 1e-6);
 
   if (fDeltaEtaIntegrated) {
     // --- Integrated ---

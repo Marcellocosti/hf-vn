@@ -1,6 +1,8 @@
 import pandas as pd
 import numpy as np
 import argparse
+
+import yaml
 import awkward as ak
 import uproot
 import os
@@ -9,13 +11,13 @@ script_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(os.path.join(script_dir, '..', 'utils'))
 from utils import logger, get_centrality_bins
 
-def converter(file, table, cent_min, cent_max, queries, labels):
+def converter(file, table, query, cols_to_keep, cols_to_add, label):
 
     # Pick data tree, convert to pandas dataframe, and save as parquet
-    with uproot.open(file) as f:
+    with upopen(file) as f:
         keys = f.keys()
 
-        matched_keys = [key for key in keys if table in key]
+        matched_keys = [key for key in keys if table in key and len(key.split('/')) == 2]
         dfs = []
         for key in matched_keys:
             logger(f"Reading {key}", level='INFO')
@@ -25,26 +27,33 @@ def converter(file, table, cent_min, cent_max, queries, labels):
                 logger(f"Empty DataFrame for key: {key}", level='WARNING')
             dfs.append(df)
 
+        # Print all columns before filtering
+        if cols_to_keep is not None:
+            dfs = [df[cols_to_keep] for df in dfs]
         full_df = pd.concat(dfs, ignore_index=True)
 
-    # Create parquet file name
-    cent_query = f"fCentrality >= {cent_min} and fCentrality < {cent_max} and "
-    for query, label in zip(queries, labels):
-        if query != "":
-            queried_df = full_df.query(cent_query + query)
-        else:
-            queried_df = full_df.query(cent_query)
+        # Add new columns
+        if cols_to_add is not None:
+            for col in cols_to_add:
+                print(f"Adding new column: {col['name']} with formula: {col['formula']}")
+                full_df[col['name']] = full_df.eval(col['formula'])
 
-        parquet_file = file.replace('.root', f'_{table}_{label}_cent_{cent_min}_{cent_max}.parquet')
+    # Create parquet file name
+    parquet_file = file.replace('.root', f'_{table}_{label}.parquet')
+    if query != "":
+        print(f"Applying query: {query}")
+        queried_df = full_df.query(query)
         queried_df.to_parquet(parquet_file)
         logger(f"Saved {label} parquet file: {parquet_file} with entries {len(queried_df)}", level='INFO')
+    else:
+        full_df.to_parquet(parquet_file)
+        logger(f"Saved {label} parquet file: {parquet_file} with entries {len(full_df)}", level='INFO')
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate synthetic datasets for ML training.")
-    parser.add_argument('--data', '-d', default='AO2D_data.root', help='Path to the input AO2D data file.')
-    parser.add_argument('--mc', '-m', default='AO2D_mc.root', help='Path to the input AO2D MC file.')
-    parser.add_argument('--cent_class', '-c', default='AO2D_mc.root', help='Path to the input AO2D MC file.')
-    parser.add_argument('--table', '-t', default='o2hfcandX', help='Name of the tree to convert.')
+    parser = argparse.ArgumentParser(description='Arguments to pass')
+    parser.add_argument('cfgFileName', metavar='text', default='cfg_prepare_inputs.yml', help='config file name for ml')
     args = parser.parse_args()
 
     _, (cent_min, cent_max) = get_centrality_bins(args.cent_class)

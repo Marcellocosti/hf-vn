@@ -58,7 +58,12 @@ def build_raw_yield_fitter(task, fitConfig):
     fitter.set_rebin(rebin)
     if fit_pars:
         fitter.set_fit_pars(fit_pars, pt_min, pt_max)
-
+    if task.get('fixed_sigma') is not None:
+        fitter.set_fixed_sigma(task['fixed_sigma'])
+    elif fitConfig.get('Sigma'):
+        sigma_cfg = fitConfig.get('Sigma')
+        sigma_init = sigma_cfg[i_pt] if isinstance(sigma_cfg, list) else sigma_cfg
+        fitter.set_sigma_init(sigma_init)
     return fitter
 
 def fit_task(task, fitConfig, inFilePath, doMassFit=False):
@@ -72,9 +77,12 @@ def fit_task(task, fitConfig, inFilePath, doMassFit=False):
         inFile.Close()
 
         if doMassFit:
+            # FindBin() puts a value that sits exactly on a bin's upper edge into the bin ABOVE it,
+            # so the pT edges must be pulled 1e-6 inside the bin (ptMin too, for symmetry/robustness);
+            # otherwise ProjectionX silently adds the next pT bin to the mass template.
             mass_histo = raw_histo.ProjectionX(f"{raw_histo.GetName()}_MassProj", 
-                                               raw_histo.GetYaxis().FindBin(task['ptMin']), 
-                                               raw_histo.GetYaxis().FindBin(task['ptMax']))
+                                               raw_histo.GetYaxis().FindBin(task['ptMin'] + 1e-6), 
+                                               raw_histo.GetYaxis().FindBin(task['ptMax'] - 1e-6))
             histo = mass_histo
         else:
             histo = raw_histo
@@ -99,9 +107,12 @@ def fit_task(task, fitConfig, inFilePath, doMassFit=False):
         result = {
             'taskID': task['taskID'],
             'iPtCand': task['iPtCand'],
-            'iPtHad': task['iPtHad'],
+            'iPtHad': task.get('iPtHad', 0),
             'ry': fit_info['sgn']['ry'],
             'ry_unc': fit_info['sgn']['ry_unc'],
+            'sigma': fit_info['sgn']['sigma'],
+            'sigma_unc': fit_info['sgn']['sigma_unc'],
+            'chi2_over_ndf': fit_info.get('chi2_over_ndf', -1.0),
             'pdfPath': task['pdfPath'],
             'pdfPathResiduals': residuals_path if fitConfig.get("minimizer") != "RooFit" else None
         }
@@ -185,6 +196,7 @@ def interface_raw_yield_fitter(config_path):
     nPtBinsCand = len(ptBinsCand) - 1
     nDeltaPhiBins = config.get("nDeltaPhiBins", 32)
     deltaPhiBins = list(np.linspace(-1.5707963705062866, 4.71238911151886, nDeltaPhiBins+1))  # default 64 bins from -pi/2 to 3pi/2
+    fixSigma = config["fitConfig"].get("fixSigma", False)
 
     outdir = PATH.Path(config["outdir"])
     suffix = config.get("suffix", "")
@@ -201,6 +213,17 @@ def interface_raw_yield_fitter(config_path):
     print("Building tasks...")
     for iPtCand, (ptMin, ptMax) in enumerate(zip(ptBinsCand[:-1], ptBinsCand[1:])):
         strPtCand = f"PtCandBin_{int(ptMin*10)}_{int(ptMax*10)}"
+
+        mass_task = {
+            "minimizer": minimizer,
+            "taskID": len(mass_tasks),
+            "taskName": f"MassFit_PtCand_{int(ptMin*10)}_{int(ptMax*10)}",
+            "iPtCand": iPtCand, "ptMin": ptMin, "ptMax": ptMax,
+            "Dmeson": Dmeson,
+            "pdfPath": outFilePath / strPtCand / f"TempMassFitResult_{strPtCand}.pdf",
+            "histoPath": f"hMassVsPt"
+        }
+        mass_tasks.append(mass_task)
 
         for iPtHad, (ptHadMin, ptHadMax) in enumerate(zip(ptBinsHad[:-1], ptBinsHad[1:])):
             strPtHad = f"PtHad_{int(ptHadMin*10)}_{int(ptHadMax*10)}"
@@ -230,17 +253,29 @@ def interface_raw_yield_fitter(config_path):
                 }
                 tasks.append(task)
 
-            mass_task = {
-                "minimizer": minimizer,
-                "taskID": len(mass_tasks),
-                "taskName": f"MassFit_PtCand_{int(ptMin*10)}_{int(ptMax*10)}",
-                "iPtCand": iPtCand, "ptMin": ptMin, "ptMax": ptMax,
-                "iPtHad": iPtHad, "ptHadMin": ptHadMin, "ptHadMax": ptHadMax,
-                "Dmeson": Dmeson,
-                "pdfPath": outFilePath / strPtCand / f"TempMassFitResult_{strPtCand}.pdf",
-                "histoPath": f"hMassVsPt"
-            }
-            mass_tasks.append(mass_task)
+    # extract ry, sigma and chi2/NDF for each PtCand bin first
+    ry_trigger = {}
+    sigma = {}
+    chi2_over_ndf = {}
+    # build task and perform the fit for inv mass distribution of trigger candidates
+    inFileMassPath = str(outdir / "InvMass/InvMassVsPt.root")
+    with alive_bar(len(mass_tasks), title="Fitting mass distribution tasks") as bar:
+        with ProcessPoolExecutor(max_workers=min(len(mass_tasks), nWorkers)) as executor:
+            futures = {executor.submit(fit_task, task, config["fitConfig"], inFileMassPath, doMassFit=True): task for task in mass_tasks}
+            for future in as_completed(futures):
+                result = future.result()
+                sigma[result['iPtCand']] = (result['sigma'], result['sigma_unc'])
+                ry_trigger[result['iPtCand']] = (result['ry'], result['ry_unc'])
+                chi2_over_ndf[result['iPtCand']] = result.get('chi2_over_ndf', -1.0)
+                del future
+                bar()
+            futures.clear()
+            gc.collect()
+
+    if fixSigma:
+        for task in tasks:
+            if task['iPtCand'] in sigma:
+                task['fixed_sigma'] = sigma[task['iPtCand']][0]
 
     # build and execute fitting tasks in parallel
     pdfs = defaultdict(dict)
@@ -261,6 +296,32 @@ def interface_raw_yield_fitter(config_path):
                 bar()
             futures.clear()
             gc.collect()
+
+    # collect results into ROOT file
+    outROOT = TFile.Open(str(outFilePath / f"PairYieldsVsPhi.root"), "RECREATE")
+    for (iPtCand, iPtHad), histo in hPairsYields_vs_DeltaPhi.items():
+        subdir_pt = f"PtCandBin_{int(ptBinsCand[iPtCand]*10)}_{int(ptBinsCand[iPtCand+1]*10)}"
+        subdir_had = f"PtHadBin_{int(ptBinsHad[iPtHad]*10)}_{int(ptBinsHad[iPtHad+1]*10)}"
+        outROOT.mkdir(subdir_pt + "/" + subdir_had)
+        outROOT.cd(subdir_pt + "/" + subdir_had)
+        histo.Write('hPairsYields_vs_DeltaPhi')
+        # save ry_trigger as a 1-bin histogram in the same directory
+        ry, ry_unc = ry_trigger.get(iPtCand, (0.0, 0.0))
+        hRy = TH1D("ry_trigger", "ry_trigger", 1, 0., 1.)
+        hRy.SetBinContent(1, ry)
+        hRy.SetBinError(1, ry_unc)
+        hRy.Write()
+        sigma_val, sigma_unc = sigma.get(iPtCand, (0.0, 0.0))
+        hSigma = TH1D("sigma", "sigma", 1, 0., 1.)
+        hSigma.SetBinContent(1, sigma_val)
+        hSigma.SetBinError(1, sigma_unc)
+        hSigma.Write()
+        chi2ndf_val = chi2_over_ndf.get(iPtCand, -1.0)
+        hChi2NDF = TH1D("chi2_over_ndf", "chi2_over_ndf", 1, 0., 1.)
+        hChi2NDF.SetBinContent(1, chi2ndf_val)
+        hChi2NDF.SetBinError(1, 0.0)
+        hChi2NDF.Write()
+    outROOT.Close()
 
     if minimizer == "flarefly":
     # combine PDFs for each (PtCand, PtHad) bin and their residuals in parallel

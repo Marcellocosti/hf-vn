@@ -3,7 +3,16 @@
 #include "TH3F.h"
 #include "TROOT.h"
 
-int loadCorrectionsToCCDB(std::string correctionsPath, int run, long long sor, long long eor, std::string ccdbDir, bool loadEse, bool loadSp, bool loadGainEq, int vn = 2) {
+int loadCorrectionsToCCDB(std::string correctionsPath,
+                          int run,
+                          long long sor,
+                          long long eor,
+                          std::string ccdbDir,
+                          bool loadEse,
+                          bool loadSp,
+                          bool loadGainEq,
+                          std::string apass,
+                          int vn = 2) {
 
     gROOT->SetBatch(kTRUE);
 
@@ -70,22 +79,40 @@ int loadCorrectionsToCCDB(std::string correctionsPath, int run, long long sor, l
     }
 
     if (loadGainEq) {
-        std::cout << "Loading gain equalization constants not yet implemented!" << std::endl;
-        // GAIN EQUALIZATION -- TODO
-        // for (int i=0; i<nrun; i++) {
-        //     std::vector<double> corrConst;
-        //     std::string inFile = Form("%s/AnalysisResults_%d.root", inFileDir.data(), runnums[i]);
-        //     calibGainRun("", inFileDir, 0, corrConst, runnums[i], false, "", dataset);
-    
-        //     metadata["runnum"] = std::to_string(runnums[i]);
-        //     metadata["detector"] = "FT0";
-    
-        //     ULong64_t sor = sors[i];
-        //     ULong64_t eor = eors[i];
-            // ccdb.storeAsTFileAny(&corrConst, Form("%s/%s", ccdbDir.data(), "FT0"), metadata, sor, eor);
-    
-        //     metadata.clear();
-        // }
+
+        TFile* inFile = new TFile(Form("%s/runs/%d/gainCor/summary.root", correctionsPath.data(), run), "read");
+        inFile->ls();
+
+        TH1F* hRelGainsFT0A = (TH1F*)inFile->Get("histRelGainsFT0A");
+        TH1F* hRelGainsFT0C = (TH1F*)inFile->Get("histRelGainsFT0C");
+        TH1F* hRelGainsFV0 = (TH1F*)inFile->Get("histRelGainsFV0");
+
+        // Unique vector for FT0A and FT0C, but FT0A is read
+        // before FT0C in qVectorsTable, so we follow this order
+        std::vector<float> relGainsFT0, relGainsFV0;
+
+        std::cout << "\n\nLoading FT0A relative gains to CCDB for run " << run << std::endl;
+        for (int iCh=0; iCh<hRelGainsFT0A->GetNbinsX(); iCh++) {
+            std::cout << "FT0A channel " << iCh << " relative gain: " << hRelGainsFT0A->GetBinContent(iCh + 1) << std::endl;
+            relGainsFT0.push_back(hRelGainsFT0A->GetBinContent(iCh + 1));
+        }
+        std::cout << "\n\nLoading FT0C relative gains to CCDB for run " << run << std::endl;
+        for (int iCh=0; iCh<hRelGainsFT0C->GetNbinsX(); iCh++) {
+            std::cout << "FT0C channel " << iCh << " relative gain: " << hRelGainsFT0C->GetBinContent(iCh + 1) << std::endl;
+            relGainsFT0.push_back(hRelGainsFT0C->GetBinContent(iCh + 1));
+        }
+        std::cout << "\n\nLoading FV0 relative gains to CCDB for run " << run << std::endl;
+        for (int iCh=0; iCh<hRelGainsFV0->GetNbinsX(); iCh++) {
+            std::cout << "FV0 channel " << iCh << " relative gain: " << hRelGainsFV0->GetBinContent(iCh + 1) << std::endl;
+            relGainsFV0.push_back(hRelGainsFV0->GetBinContent(iCh + 1));
+        }
+
+        metadata["runnum"] = std::to_string(run);
+        metadata["detector"] = "FT0";
+        metadata["apass"] = apass;
+        ccdb.storeAsTFileAny(&relGainsFT0, Form("%s/GainEq/%s", ccdbDir.data(), "FT0"), metadata, sor, eor);
+        ccdb.storeAsTFileAny(&relGainsFV0, Form("%s/GainEq/%s", ccdbDir.data(), "FV0"), metadata, sor, eor);
+        metadata.clear();
     }
 
     return 0;

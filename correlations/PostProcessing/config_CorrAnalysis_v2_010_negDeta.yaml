@@ -4,17 +4,18 @@ outdir: "/home/wuct/MetaData/DATA/OO/apass2/corr/results/fifth/k020_gausPer/etaV
 pathFileSE: "/home/wuct/MetaData/DATA/OO/apass2/corr/results/fifth/large/SE/k020/AnalysisResults.root"
 pathFileME: "/home/wuct/MetaData/DATA/OO/apass2/corr/results/fifth/large/ME/k020/AnalysisResults.root"
 pathFileMass: "/home/wuct/MetaData/DATA/OO/apass2/corr/results/fifth/large/SE/k020/AnalysisResults.root"
-method: "MassBinning" # "MassBinning" or "DeltaPhiBinning"
+method: "DeltaPhiBinning" # "MassBinning" or "DeltaPhiBinning"
 nWorkers: 18
 
 task_LM:
   do: true
   suffix: "0d8_1d5"
-  outdir: "/home/wuct/MetaData/DATA/OO/apass2/corr/results/fifth/k60100_gausPer/etaVariation"
-  pathFileSE: "/home/wuct/MetaData/DATA/OO/apass2/corr/results/fifth/large/SE/k60100/AnalysisResults.root"
-  pathFileME: "/home/wuct/MetaData/DATA/OO/apass2/corr/results/fifth/large/ME/k60100/AnalysisResults.root"
-  pathFileMass: "/home/wuct/MetaData/DATA/OO/apass2/corr/results/fifth/large/SE/k60100/AnalysisResults.root"
+  outdir: "/home/wuct/MetaData/DATA/OO/apass2/corr/results/fifth/k60100_k2050_loosebkg2"
+  pathFileSE: "/home/wuct/MetaData/DATA/OO/apass2/corr/results/fifth/large/SE/k60100_k2050_loosebkg2/AnalysisResults.root"
+  pathFileME: "/home/wuct/MetaData/DATA/OO/apass2/corr/results/fifth/large/ME/k60100_k2050_loosebkg2/AnalysisResults.root"
+  pathFileMass: "/home/wuct/MetaData/DATA/OO/apass2/corr/results/fifth/large/SE/k60100_k2050_loosebkg2/AnalysisResults.root"
   nDeltaPhiBins: 16
+  # massRebin: [6,    6,    6,    6,    6,    6,    6,    10,    10,    10,    12,    12]
 
 nDeltaPhiBins: 16
 deltaEtaBins: [
@@ -37,8 +38,7 @@ ptBinsCand: [
            5.0,
            6.0,
            7.0,
-           8.0,
-           12.0
+           8.0
            ]
 ptBinsHad: [0.2,3]
 invMassBins: [
@@ -83,6 +83,7 @@ debug: 2 # 0 only final results, 1 keep correlation histos, 2 keep all histos
 fitConfig:
     minimizer: 'RooFit' # RooFit or flarefly
     Sigma: [0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02]
+    fixSigma: true
     MassFitRanges: [
             [1.72, 2.02], # pt 1
             [1.72, 2.02], # pt 2
@@ -101,10 +102,10 @@ fitConfig:
     SgnFunc: 'kGaus' # signal function. If a single value is provided, it will be used for all pt bins.
     BkgFuncVn: 'kLin' # background function for vn. If a single value is provided, it will be used for all pt bins.
 
-    FitFunction: '10'
+    FitFunction: '11'
     WithPedLM: false # if true, include pedestal in the LM template fit
     FixLMFactor: true # if true, fix the LM factor
-    tempFunc: 4 # LM template type: 0=raw histogram, 1=raw+spline, 2=smooth+spline, 3=Gaus, 4=GausPeriodic
+    tempFunc: 4 # LM template type: 0=raw histogram, 1=raw+spline, 2=smooth+spline, 3=Gaus, 4=GausPeriodic, 5=vonMises (peaks fixed at 0 / pi)
     FixBaseline: -4
     # "0 : baseline free, = 1 : fix the baseline to the minimum of the histogram, < 0 : fix the baseline to the weighted average of the abs(fFixBaseline) lower points, = 3 : fix the baseline to the weighted average of the points passed through the function SetPointsForBaseline(), 4 : fix the baseline to the weighted average of default transverse region points
     FixMean: 0
